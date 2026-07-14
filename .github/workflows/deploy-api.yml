@@ -28,7 +28,7 @@ jobs:
 
       # Publish the API image to GitHub Container Registry. Any host that can
       # pull an OCI image (Fly, Railway, Render, a VPS) deploys from this.
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
