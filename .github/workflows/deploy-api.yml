@@ -34,14 +34,19 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Docker tags must be lowercase; github.repository preserves owner casing.
+      - name: Compute image name
+        id: image
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY@L}/noni-api" >> "$GITHUB_OUTPUT"
+
       - uses: docker/build-push-action@v6
         with:
           context: .
           file: apps/api/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}/noni-api:latest
-            ghcr.io/${{ github.repository }}/noni-api:${{ github.sha }}
+            ${{ steps.image.outputs.name }}:latest
+            ${{ steps.image.outputs.name }}:${{ github.sha }}
 
       # Optional: trigger the host's deploy after the image is published.
       # Set the DEPLOY_HOOK_URL repo secret (Render/Railway deploy hook, etc.).

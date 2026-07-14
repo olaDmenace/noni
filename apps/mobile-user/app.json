@@ -28,11 +28,15 @@
     },
     "extra": {
       "apiBaseUrl": "http://localhost:3000",
-      "wsBaseUrl": "ws://localhost:3000"
+      "wsBaseUrl": "ws://localhost:3000",
+      "eas": {
+        "projectId": "e764b43a-2f6d-48db-b9cf-ea54937ba6df"
+      }
     },
     "plugins": [
       "expo-secure-store",
       "expo-font"
-    ]
+    ],
+    "owner": "oladmenace"
   }
 }
