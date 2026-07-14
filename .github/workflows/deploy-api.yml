@@ -1,0 +1,61 @@
+name: Deploy API
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/api/**'
+      - 'packages/**'
+      - '.github/workflows/deploy-api.yml'
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run -w @noni/api prisma:generate
+      - run: npm run -w @noni/api build
+
+      # Publish the API image to GitHub Container Registry. Any host that can
+      # pull an OCI image (Fly, Railway, Render, a VPS) deploys from this.
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/noni-api:latest
+            ghcr.io/${{ github.repository }}/noni-api:${{ github.sha }}
+
+      # Optional: trigger the host's deploy after the image is published.
+      # Set the DEPLOY_HOOK_URL repo secret (Render/Railway deploy hook, etc.).
+      - name: Trigger deploy hook
+        if: ${{ vars.DEPLOY_HOOK_ENABLED == 'true' }}
+        run: curl -fsS -X POST "$DEPLOY_HOOK_URL"
+        env:
+          DEPLOY_HOOK_URL: ${{ secrets.DEPLOY_HOOK_URL }}
+
+      # Apply pending Prisma migrations against the production database.
+      # Requires the PRODUCTION_DATABASE_URL secret (direct, non-pooled URL).
+      - name: Run database migrations
+        if: ${{ vars.RUN_MIGRATIONS == 'true' }}
+        run: npx -w @noni/api prisma migrate deploy
+        env:
+          DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}

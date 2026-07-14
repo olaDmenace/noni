@@ -1,0 +1,38 @@
+{
+  "expo": {
+    "name": "Noni",
+    "slug": "noni-user",
+    "scheme": "noni",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": false,
+    "backgroundColor": "#0E0B0A",
+    "splash": {
+      "backgroundColor": "#0E0B0A",
+      "resizeMode": "contain"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "ng.noni.user",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Noni needs microphone access for voice sessions with listeners."
+      }
+    },
+    "android": {
+      "package": "ng.noni.user",
+      "permissions": [
+        "RECORD_AUDIO",
+        "MODIFY_AUDIO_SETTINGS"
+      ]
+    },
+    "extra": {
+      "apiBaseUrl": "http://localhost:3000",
+      "wsBaseUrl": "ws://localhost:3000"
+    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-font"
+    ]
+  }
+}

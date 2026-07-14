@@ -1,0 +1,9 @@
+{
+  "extends": "@noni/config/tsconfig.react-native.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "noEmit": true,
+    "types": []
+  },
+  "include": ["App.tsx", "src/**/*", "app.config.ts"]
+}

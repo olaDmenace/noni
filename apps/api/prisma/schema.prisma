@@ -1,0 +1,279 @@
+// Noni — Prisma schema. See arch §5.1.
+// All money fields are kobo (Int). NEVER store session message content here.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Tier {
+  T0
+  T1
+  T2
+  T3
+  T4
+  T5
+  T6
+  T7
+}
+
+enum SessionType {
+  TEXT
+  VOICE
+}
+
+enum SessionStatus {
+  QUEUED
+  ACTIVE
+  COMPLETED
+  INTERRUPTED
+  CRISIS_FLAGGED
+}
+
+enum AgentStatus {
+  AVAILABLE
+  BUSY
+  OFFLINE
+}
+
+enum TransactionType {
+  TOPUP
+  SESSION_DEBIT
+  REFUND
+  SUBSCRIPTION
+  PAYOUT
+}
+
+enum UserRole {
+  USER
+  AGENT
+  ADMIN
+}
+
+model User {
+  id                String              @id @default(uuid())
+  phoneHash         String              @unique
+  alias             String
+  walletBalanceKobo Int                 @default(0)
+  tierPreference    Tier?
+  role              UserRole            @default(USER)
+  pinHash           String?
+  subscription      Subscription?
+  transactions      WalletTransaction[]
+  sessions          Session[]
+  pushTokens        PushToken[]
+  refreshTokens     RefreshToken[]
+  agentBlocks       AgentBlock[]
+  agentReports      AgentReport[]
+  createdAt         DateTime            @default(now())
+  lastActiveAt      DateTime            @updatedAt
+
+  @@index([role])
+}
+
+model Agent {
+  id                       String        @id @default(uuid())
+  userId                   String        @unique
+  alias                    String
+  specialties              String[]
+  sessionTypes             SessionType[]
+  languages                String[]
+  status                   AgentStatus   @default(OFFLINE)
+  ratingAvg                Float         @default(0)
+  ratingCount              Int           @default(0)
+  earningsBalanceKobo      Int           @default(0)
+  trainingPassedAt         DateTime?
+  crisisTrainingPassedAt   DateTime?
+  isSuspended              Boolean       @default(false)
+  flaggedForReview         Boolean       @default(false)
+  bankCode                 String?
+  bankAccountName          String?
+  bankAccountEncrypted     String?
+  sessions                 Session[]
+  payouts                  AgentPayout[]
+  blocks                   AgentBlock[]
+  reports                  AgentReport[]
+  createdAt                DateTime      @default(now())
+  updatedAt                DateTime      @updatedAt
+
+  @@index([status])
+  @@index([isSuspended])
+}
+
+model Session {
+  id                String              @id @default(uuid())
+  userId            String
+  user              User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  agentId           String?
+  agent             Agent?              @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  tier              Tier
+  sessionType       SessionType
+  status            SessionStatus       @default(QUEUED)
+  isPriority        Boolean             @default(false)
+  amountChargedKobo Int
+  agentPayoutKobo   Int                 @default(0)
+  paidFromSubscription Boolean          @default(false)
+  assignedAt        DateTime?
+  startedAt         DateTime?
+  endedAt           DateTime?
+  durationSecs      Int?
+  userRating        Int?
+  userRatingComment String?
+  crisisFlag        Boolean             @default(false)
+  crisisFlaggedAt   DateTime?
+  transactions      WalletTransaction[]
+  agentNote         AgentSessionNote?
+  agentBlocks       AgentBlock[]
+  agentReports      AgentReport[]
+  createdAt         DateTime            @default(now())
+
+  @@index([userId, status])
+  @@index([agentId, status])
+  @@index([status, createdAt])
+}
+
+model AgentSessionNote {
+  // Encrypted at application layer (AES-256-GCM) before persist. See arch §9.2.
+  id              String   @id @default(uuid())
+  sessionId       String   @unique
+  session         Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  noteEncrypted   String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model WalletTransaction {
+  id          String          @id @default(uuid())
+  userId      String
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type        TransactionType
+  amountKobo  Int
+  providerRef String?         @unique
+  sessionId   String?
+  session     Session?        @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  metadata    Json?
+  createdAt   DateTime        @default(now())
+
+  @@index([userId, createdAt])
+}
+
+model Subscription {
+  id                String   @id @default(uuid())
+  userId            String   @unique
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tier              Tier
+  sessionsRemaining Int
+  rolloverSessions  Int      @default(0) // F-026: unused sessions roll over 1 month only
+  renewsAt          DateTime
+  graceUntil        DateTime? // F-026: 3-day grace after failed renewal
+  providerRef       String?  @unique
+  isActive          Boolean  @default(true)
+  pausedAt          DateTime?
+  cancelledAt       DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model AgentPayout {
+  id           String   @id @default(uuid())
+  agentId      String
+  agent        Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  amountKobo   Int
+  providerRef  String?  @unique
+  status       String   // PENDING | SUCCESS | FAILED
+  errorMessage String?
+  createdAt    DateTime @default(now())
+  settledAt    DateTime?
+
+  @@index([agentId, createdAt])
+}
+
+model PushToken {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  platform  String   // IOS | ANDROID
+  createdAt DateTime @default(now())
+}
+
+model RefreshToken {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash   String   @unique
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+}
+
+model OtpRequest {
+  id          String   @id @default(uuid())
+  phoneHash   String
+  codeHash    String
+  attempts    Int      @default(0)
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([phoneHash, createdAt])
+}
+
+model CrisisIncident {
+  // Audit trail only. NEVER stores message content (NF-011).
+  id            String   @id @default(uuid())
+  sessionId     String
+  triggeredBy   String   // KEYWORD | AGENT_FLAG | AI_DETECTION
+  triggerSource String   // USER | AGENT | AI | SYSTEM
+  matchedKeyword String?
+  resolved      Boolean  @default(false)
+  resolvedAt    DateTime?
+  notes         String?
+  createdAt     DateTime @default(now())
+
+  @@index([sessionId])
+  @@index([resolved, createdAt])
+}
+
+model AgentBlock {
+  // S-005. User blocks an agent mid-session (session ends, no charge).
+  // A user can only block an agent once; re-blocking is a no-op.
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  agentId   String
+  agent     Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  sessionId String?
+  session   Session? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, agentId])
+  @@index([agentId])
+}
+
+model AgentReport {
+  // S-005. Users report an agent for misconduct. Reviewed within 24h.
+  id         String    @id @default(uuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  agentId    String
+  agent      Agent     @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  sessionId  String?
+  session    Session?  @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  reason     String    // MISCONDUCT | INAPPROPRIATE | UNSAFE | OTHER
+  details    String?
+  reviewedAt DateTime?
+  reviewedBy String?
+  outcome    String?   // NO_ACTION | WARNED | SUSPENDED | BANNED
+  createdAt  DateTime  @default(now())
+
+  @@index([agentId])
+  @@index([reviewedAt])
+}

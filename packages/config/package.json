@@ -1,0 +1,29 @@
+{
+  "name": "@noni/config",
+  "private": true,
+  "version": "0.0.0",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./eslint-preset.cjs": "./eslint-preset.cjs",
+    "./eslint-preset-react-native.cjs": "./eslint-preset-react-native.cjs",
+    "./tsconfig.base.json": "./tsconfig.base.json",
+    "./tsconfig.node.json": "./tsconfig.node.json",
+    "./tsconfig.react-native.json": "./tsconfig.react-native.json"
+  },
+  "files": [
+    "tsconfig.base.json",
+    "tsconfig.node.json",
+    "tsconfig.react-native.json",
+    "eslint-preset.cjs",
+    "eslint-preset-react-native.cjs"
+  ],
+  "scripts": {
+    "lint": "echo \"@noni/config: nothing to lint\"",
+    "typecheck": "echo \"@noni/config: nothing to typecheck\""
+  },
+  "dependencies": {
+    "eslint-plugin-react": "^7.35.0",
+    "eslint-plugin-react-hooks": "^4.6.2"
+  }
+}

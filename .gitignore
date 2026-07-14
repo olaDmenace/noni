@@ -1,0 +1,45 @@
+node_modules/
+.turbo/
+dist/
+build/
+.next/
+.expo/
+coverage/
+*.tsbuildinfo
+
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Proprietary product documentation — kept out of the public repo.
+docs/
+DESIGN.md
+
+# Prisma generated client
+apps/api/src/models/generated/
+
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+
+# OS / editor
+*.orig
+
+# Expo
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+ios/Pods/
+android/.gradle/
+android/app/build/
+
