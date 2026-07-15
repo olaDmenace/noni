@@ -202,6 +202,50 @@ export function QueueScreen({ navigation }: Props) {
         </View>
       ) : null}
 
+      {/* Schedule (F-010) + practice bot (F-030) */}
+      <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm }}>
+        <Pressable
+          onPress={() => navigation.navigate('Schedule')}
+          style={({ pressed }) => ({
+            flex: 1,
+            padding: spacing.md,
+            borderRadius: radius.md,
+            borderWidth: 1,
+            borderColor: colors.border,
+            backgroundColor: colors.surface,
+            opacity: pressed ? 0.85 : 1,
+          })}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+            <Feather name="calendar" size={16} color={colors.secondary} />
+            <Text style={{ ...typography.bodyStrong, color: colors.text }}>Schedule</Text>
+          </View>
+          <Text style={{ ...typography.caption, color: colors.textMuted, marginTop: 4 }}>
+            Sessions booked ahead
+          </Text>
+        </Pressable>
+        <Pressable
+          onPress={() => navigation.navigate('Practice')}
+          style={({ pressed }) => ({
+            flex: 1,
+            padding: spacing.md,
+            borderRadius: radius.md,
+            borderWidth: 1,
+            borderColor: colors.border,
+            backgroundColor: colors.surface,
+            opacity: pressed ? 0.85 : 1,
+          })}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+            <Feather name="message-circle" size={16} color={colors.secondary} />
+            <Text style={{ ...typography.bodyStrong, color: colors.text }}>Practice</Text>
+          </View>
+          <Text style={{ ...typography.caption, color: colors.textMuted, marginTop: 4 }}>
+            Rehearse with Chidi (AI)
+          </Text>
+        </Pressable>
+      </View>
+
       {queue.isLoading ? (
         <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.xl }} />
       ) : null}

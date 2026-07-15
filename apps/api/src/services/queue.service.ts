@@ -23,18 +23,26 @@ const PRIORITY_OFFSET = 10 ** 13; // > any epoch-ms delta; guarantees priority c
 const ACCEPT_WINDOW_SECS = 60; // F-032
 const AVG_SESSION_SECS = 15 * 60; // crude wait estimate until real telemetry exists
 const passedKey = (sessionId: string) => `queue:passed:${sessionId}`;
+const prefKey = (sessionId: string) => `queue:pref:${sessionId}`;
 
 export const queueService = {
-  async enqueue(sessionId: string, opts: { priority: boolean }): Promise<WsQueueUpdateEvent> {
+  async enqueue(
+    sessionId: string,
+    opts: { priority: boolean; preferredAgentId?: string },
+  ): Promise<WsQueueUpdateEvent> {
     const score = Date.now() - (opts.priority ? PRIORITY_OFFSET : 0);
     await redis.zadd(WAITING_ZSET, score, sessionId);
+    if (opts.preferredAgentId) {
+      // Scheduled bookings and "connect with this listener" prefer one agent.
+      await redis.set(prefKey(sessionId), opts.preferredAgentId, 'EX', 60 * 60);
+    }
     await this.matchNext();
     return this.positionOf(sessionId);
   },
 
   async remove(sessionId: string): Promise<void> {
     await redis.zrem(WAITING_ZSET, sessionId);
-    await redis.del(passedKey(sessionId));
+    await redis.del(passedKey(sessionId), prefKey(sessionId));
     await this.broadcastPositions();
   },
 
@@ -75,14 +83,22 @@ export const queueService = {
       });
       const excluded = [...passed, ...blocked.map((b) => b.agentId)];
 
-      const agent = await prisma.agent.findFirst({
-        where: {
-          status: 'AVAILABLE',
-          isSuspended: false,
-          crisisTrainingPassedAt: { not: null },
-          sessionTypes: { has: session.sessionType },
-          ...(excluded.length ? { id: { notIn: excluded } } : {}),
-        },
+      const baseWhere = {
+        status: 'AVAILABLE' as const,
+        isSuspended: false,
+        crisisTrainingPassedAt: { not: null },
+        sessionTypes: { has: session.sessionType },
+        ...(excluded.length ? { id: { notIn: excluded } } : {}),
+      };
+
+      // Booked/preferred listener gets first refusal; anyone else if they're busy.
+      const preferredId = await redis.get(prefKey(sessionId));
+      let agent =
+        preferredId && !excluded.includes(preferredId)
+          ? await prisma.agent.findFirst({ where: { ...baseWhere, id: preferredId } })
+          : null;
+      agent ??= await prisma.agent.findFirst({
+        where: baseWhere,
         orderBy: { updatedAt: 'asc' }, // least-recently-touched agent first
       });
       if (!agent) continue;

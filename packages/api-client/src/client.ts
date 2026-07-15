@@ -2,12 +2,16 @@
 // Used by both mobile apps. Endpoints map to arch §11.2.
 
 import type {
+  AgentApplicationState,
+  AgentApplyBody,
   AgentDashboardResponse,
   AgentListQuery,
   AgentListResponse,
   AgentPayout,
   AgentProfileResponse,
   AgentQueueItem,
+  Booking,
+  CreateBookingBody,
   AiMessageBody,
   AiMessageResponse,
   ApiError,
@@ -21,7 +25,9 @@ import type {
   InitiateTopupResponse,
   MeResponse,
   PaymentHistoryResponse,
+  PracticeMessageResponse,
   RateSessionBody,
+  RedeemCodeResponse,
   RegisterPushTokenBody,
   RequestOtpBody,
   Session,
@@ -29,6 +35,8 @@ import type {
   UpdateAgentProfileBody,
   UpdateAgentStatusBody,
   UpdateMeBody,
+  UpgradeRequestResponse,
+  UpgradeRespondResponse,
   VerifyOtpBody,
   VerifyTopupResponse,
   WalletStateResponse,
@@ -181,6 +189,61 @@ export class NoniApiClient {
     return this.request<void>(new URL('/v1/users/me', this.opts.baseUrl).toString(), {
       method: 'DELETE',
     });
+  }
+
+  // ── Advance scheduling (F-010) ────────────────────────────────────────
+  createBooking(body: CreateBookingBody) {
+    return this.post<Booking>('/v1/schedule', body);
+  }
+  myBookings() {
+    return this.get<{ bookings: Booking[] }>('/v1/schedule/me');
+  }
+  cancelBooking(id: string) {
+    return this.request<void>(new URL(`/v1/schedule/${id}`, this.opts.baseUrl).toString(), {
+      method: 'DELETE',
+    });
+  }
+  agentSchedule() {
+    return this.get<{ bookings: Booking[] }>('/v1/agents/me/schedule');
+  }
+
+  // ── Voice upgrade (F-014) ─────────────────────────────────────────────
+  requestVoiceUpgrade(sessionId: string) {
+    return this.post<UpgradeRequestResponse>(`/v1/sessions/${sessionId}/upgrade-request`, {});
+  }
+  acceptVoiceUpgrade(sessionId: string) {
+    return this.post<UpgradeRespondResponse>(`/v1/sessions/${sessionId}/upgrade-accept`, {});
+  }
+  declineVoiceUpgrade(sessionId: string) {
+    return this.post<UpgradeRespondResponse>(`/v1/sessions/${sessionId}/upgrade-decline`, {});
+  }
+
+  // ── Agent applications + practice bot (F-030) ─────────────────────────
+  applyAsAgent(body: AgentApplyBody) {
+    return this.post<AgentApplicationState>('/v1/agents/apply', body);
+  }
+  myAgentApplication() {
+    return this.get<{ application: AgentApplicationState | null }>('/v1/agents/apply/me');
+  }
+  practiceMessage(message: string) {
+    return this.post<PracticeMessageResponse>('/v1/agents/me/practice/message', { message });
+  }
+  resetPractice() {
+    return this.request<void>(
+      new URL('/v1/agents/me/practice', this.opts.baseUrl).toString(),
+      { method: 'DELETE' },
+    );
+  }
+
+  // ── B2B org codes ─────────────────────────────────────────────────────
+  redeemAccessCode(code: string) {
+    return this.post<RedeemCodeResponse>('/v1/subscriptions/redeem', { code });
+  }
+
+  // ── PDF export (F-028) ────────────────────────────────────────────────
+  /** Returns the export URL; fetch with the bearer token to download. */
+  paymentHistoryExportUrl() {
+    return new URL('/v1/payments/history/export', this.opts.baseUrl).toString();
   }
 
   // ── Voice (F-013) ─────────────────────────────────────────────────────

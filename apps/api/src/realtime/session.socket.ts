@@ -71,6 +71,19 @@ export function registerSessionHandlers(io: Server, socket: Socket): void {
     }
   });
 
+  // F-016 quick reactions — allowlisted emoji, relay-only, never stored.
+  const ALLOWED_REACTIONS = ['❤️', '🙏', '😢'];
+  socket.on('reaction', ({ sessionId, emoji }: { sessionId: string; emoji: string }) => {
+    if (!ALLOWED_REACTIONS.includes(emoji)) return;
+    if (socket.rooms.has(`session:${sessionId}`)) {
+      socket.to(`session:${sessionId}`).emit('reaction', {
+        emoji,
+        sender: user.role === 'AGENT' ? 'AGENT' : 'USER',
+        timestamp: Date.now(),
+      });
+    }
+  });
+
   // F-013 WebRTC signalling relay for voice sessions. Payloads are opaque
   // (SDP offers/answers, ICE candidates) — forwarded, never inspected or stored.
   for (const evt of ['webrtc_offer', 'webrtc_answer', 'webrtc_ice'] as const) {

@@ -2,8 +2,9 @@
 // Privacy rule: messages live ONLY in component state — never persisted anywhere.
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Feather } from '@expo/vector-icons';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Animated,
   FlatList,
   KeyboardAvoidingView,
   Modal,
@@ -13,9 +14,11 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { NoniApiError } from '@noni/api-client';
 import type {
   WsCrisisAlertEvent,
   WsMessageEvent,
+  WsReactionEvent,
   WsSessionEndEvent,
   WsTypingEvent,
 } from '@noni/types';
@@ -34,8 +37,9 @@ import {
 } from '@noni/ui';
 import { api } from '../../api/client';
 import { getSocket } from '../../realtime/socket';
-import { formatDuration } from '../../utils/formatters';
+import { formatDuration, formatNaira } from '../../utils/formatters';
 import type { AppStackParamList } from '../../navigation/RootNavigator';
+import { VoiceCallPanel } from './VoiceCallPanel';
 
 type Props = NativeStackScreenProps<AppStackParamList, 'HumanSession'>;
 
@@ -46,6 +50,9 @@ interface ChatMessage {
 }
 
 const TYPING_IDLE_MS = 1500;
+// F-016 — the only reactions the server relays.
+const REACTION_EMOJI = ['❤️', '🙏', '😢'] as const;
+const REACTION_VISIBLE_MS = 2000;
 
 export function HumanSessionScreen({ route, navigation }: Props) {
   const { sessionId, agentAlias, sessionType } = route.params;
@@ -60,6 +67,18 @@ export function HumanSessionScreen({ route, navigation }: Props) {
   const [sheetVisible, setSheetVisible] = useState(false);
   const [crisis, setCrisis] = useState<WsCrisisAlertEvent | null>(null);
   const [crisisModalVisible, setCrisisModalVisible] = useState(false);
+
+  // Voice (F-013/F-014) — VOICE sessions start in voice mode; TEXT sessions
+  // can switch after the listener accepts an upgrade.
+  const [voiceMode, setVoiceMode] = useState(sessionType === 'VOICE');
+  const [upgradeDeltaKobo, setUpgradeDeltaKobo] = useState<number | null>(null);
+  const [requestingUpgrade, setRequestingUpgrade] = useState(false);
+
+  // Quick reactions (F-016) — ephemeral overlay, never chat bubbles, never stored.
+  const [floatingReactions, setFloatingReactions] = useState<
+    Array<{ id: string; emoji: string }>
+  >([]);
+  const reactionSeqRef = useRef(0);
 
   const [elapsed, setElapsed] = useState(0);
   const [ratingVisible, setRatingVisible] = useState(false);
@@ -77,6 +96,15 @@ export function HumanSessionScreen({ route, navigation }: Props) {
   function scrollToEnd() {
     setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 30);
   }
+
+  const showFloatingReaction = useCallback((emoji: string) => {
+    reactionSeqRef.current += 1;
+    const id = `r-${reactionSeqRef.current}`;
+    setFloatingReactions((rs) => [...rs, { id, emoji }]);
+    setTimeout(() => {
+      setFloatingReactions((rs) => rs.filter((r) => r.id !== id));
+    }, REACTION_VISIBLE_MS);
+  }, []);
 
   // Session timer.
   useEffect(() => {
@@ -118,6 +146,35 @@ export function HumanSessionScreen({ route, navigation }: Props) {
     const onErrorEvent = (e: { code: string }) => {
       toast.error(e.code, 'Something went wrong');
     };
+    // F-016 — the server only relays to the rest of the room, so anything
+    // arriving here is the listener's.
+    const onReaction = (e: WsReactionEvent) => {
+      if (e.sender === 'AGENT') showFloatingReaction(e.emoji);
+    };
+    // F-014 — text→voice upgrade outcomes.
+    const onUpgradeAccepted = (e: { sessionId: string }) => {
+      if (e.sessionId !== sessionId) return;
+      setUpgradeDeltaKobo(null);
+      setVoiceMode(true);
+      toast.success('Voice is ready — start the call whenever you like.', 'Listener accepted');
+    };
+    const onUpgradeDeclined = (e: { sessionId: string }) => {
+      if (e.sessionId !== sessionId) return;
+      setUpgradeDeltaKobo(null);
+      toast.info('Your listener prefers to continue in text.');
+    };
+    const onUpgradeFailed = (e: { sessionId: string; reason: string }) => {
+      if (e.sessionId !== sessionId) return;
+      setUpgradeDeltaKobo(null);
+      if (e.reason === 'INSUFFICIENT_FUNDS') {
+        toast.warning(
+          'Not enough in your wallet for voice. Top up and try again — the chat continues.',
+          'Wallet too low',
+        );
+      } else {
+        toast.error('You can keep talking in text.', 'Could not switch to voice');
+      }
+    };
 
     socket.emit('join_room', { sessionId });
     socket.on('message', onMessage);
@@ -126,6 +183,10 @@ export function HumanSessionScreen({ route, navigation }: Props) {
     socket.on('crisis_alert', onCrisisAlert);
     socket.on('session_end', onSessionEnd);
     socket.on('error_event', onErrorEvent);
+    socket.on('reaction', onReaction);
+    socket.on('voice_upgrade_accepted', onUpgradeAccepted);
+    socket.on('voice_upgrade_declined', onUpgradeDeclined);
+    socket.on('voice_upgrade_failed', onUpgradeFailed);
 
     return () => {
       socket.emit('leave_room', { sessionId });
@@ -135,9 +196,13 @@ export function HumanSessionScreen({ route, navigation }: Props) {
       socket.off('crisis_alert', onCrisisAlert);
       socket.off('session_end', onSessionEnd);
       socket.off('error_event', onErrorEvent);
+      socket.off('reaction', onReaction);
+      socket.off('voice_upgrade_accepted', onUpgradeAccepted);
+      socket.off('voice_upgrade_declined', onUpgradeDeclined);
+      socket.off('voice_upgrade_failed', onUpgradeFailed);
       if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
     };
-  }, [sessionId, toast]);
+  }, [sessionId, toast, showFloatingReaction]);
 
   function stopTyping() {
     if (typingTimerRef.current) {
@@ -174,6 +239,33 @@ export function HumanSessionScreen({ route, navigation }: Props) {
     setInput('');
     getSocket().emit('send_message', { sessionId, text });
     scrollToEnd();
+  }
+
+  function sendReaction(emoji: string) {
+    if (endedRef.current) return;
+    getSocket().emit('reaction', { sessionId, emoji });
+    // The server never echoes back to the sender — show our own locally.
+    showFloatingReaction(emoji);
+  }
+
+  async function requestVoiceUpgrade() {
+    if (requestingUpgrade || upgradeDeltaKobo !== null || endedRef.current) return;
+    setRequestingUpgrade(true);
+    try {
+      const res = await api.requestVoiceUpgrade(sessionId);
+      setUpgradeDeltaKobo(res.deltaKobo);
+    } catch (err) {
+      if (err instanceof NoniApiError && err.code === 'INSUFFICIENT_FUNDS') {
+        toast.warning(
+          'Not enough in your wallet for voice. Top up and try again — the chat continues.',
+          'Wallet too low',
+        );
+      } else {
+        toast.error(err instanceof Error ? err.message : 'Try again', 'Could not request voice');
+      }
+    } finally {
+      setRequestingUpgrade(false);
+    }
   }
 
   async function onEndSession() {
@@ -285,7 +377,9 @@ export function HumanSessionScreen({ route, navigation }: Props) {
         </Pressable>
       </View>
 
-      {sessionType === 'VOICE' ? (
+      {voiceMode ? <VoiceCallPanel sessionId={sessionId} /> : null}
+
+      {!voiceMode && upgradeDeltaKobo !== null ? (
         <View
           style={{
             backgroundColor: colors.secondaryMuted,
@@ -298,7 +392,7 @@ export function HumanSessionScreen({ route, navigation }: Props) {
           }}
         >
           <Text style={{ ...typography.caption, color: colors.secondary }}>
-            Voice calling requires the production build — chat is available meanwhile.
+            Waiting for your listener to accept… ({formatNaira(upgradeDeltaKobo)} extra)
           </Text>
         </View>
       ) : null}
@@ -357,6 +451,27 @@ export function HumanSessionScreen({ route, navigation }: Props) {
           }}
         />
 
+        {/* F-016 — incoming reactions float near the top of the chat for ~2s. */}
+        {floatingReactions.length > 0 ? (
+          <View
+            pointerEvents="none"
+            style={{
+              position: 'absolute',
+              top: spacing.sm,
+              left: 0,
+              right: 0,
+              flexDirection: 'row',
+              justifyContent: 'center',
+              gap: spacing.sm,
+              zIndex: 5,
+            }}
+          >
+            {floatingReactions.map((r) => (
+              <FloatingReaction key={r.id} emoji={r.emoji} />
+            ))}
+          </View>
+        ) : null}
+
         {agentTyping ? (
           <Text style={{ ...typography.caption, color: colors.textMuted, paddingBottom: spacing.xs }}>
             {agentAlias} is typing…
@@ -386,6 +501,47 @@ export function HumanSessionScreen({ route, navigation }: Props) {
             </Text>
           </Pressable>
         ) : null}
+
+        {/* F-016 quick reactions + F-014 switch-to-voice — subtle, above the composer. */}
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: spacing.sm,
+            paddingTop: spacing.xs,
+          }}
+        >
+          {REACTION_EMOJI.map((emoji) => (
+            <Pressable
+              key={emoji}
+              onPress={() => sendReaction(emoji)}
+              hitSlop={6}
+              style={({ pressed }) => ({
+                paddingHorizontal: spacing.md,
+                paddingVertical: spacing.xs,
+                borderRadius: radius.pill,
+                borderWidth: 1,
+                borderColor: colors.border,
+                backgroundColor: pressed ? colors.surfaceElev : 'transparent',
+              })}
+            >
+              <Text style={{ fontSize: 15, lineHeight: 20 }}>{emoji}</Text>
+            </Pressable>
+          ))}
+          <View style={{ flex: 1 }} />
+          {!voiceMode && sessionType === 'TEXT' && upgradeDeltaKobo === null ? (
+            <Pressable
+              onPress={() => void requestVoiceUpgrade()}
+              disabled={requestingUpgrade}
+              hitSlop={6}
+              style={({ pressed }) => ({ opacity: pressed || requestingUpgrade ? 0.6 : 1 })}
+            >
+              <Text style={{ ...typography.caption, color: colors.secondary }}>
+                {requestingUpgrade ? 'Asking…' : 'Switch to voice'}
+              </Text>
+            </Pressable>
+          ) : null}
+        </View>
 
         <View
           style={{
@@ -523,5 +679,39 @@ export function HumanSessionScreen({ route, navigation }: Props) {
         </View>
       </Modal>
     </Screen>
+  );
+}
+
+// F-016 — a reaction drifts up and fades over ~2s. Never a chat bubble,
+// never stored; it exists only for the moment it is felt.
+function FloatingReaction({ emoji }: { emoji: string }) {
+  const anim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(anim, {
+      toValue: 1,
+      duration: REACTION_VISIBLE_MS - 100,
+      useNativeDriver: true,
+    }).start();
+  }, [anim]);
+
+  return (
+    <Animated.Text
+      style={{
+        fontSize: 26,
+        lineHeight: 32,
+        opacity: anim.interpolate({
+          inputRange: [0, 0.12, 0.7, 1],
+          outputRange: [0, 1, 1, 0],
+        }),
+        transform: [
+          {
+            translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [10, -14] }),
+          },
+        ],
+      }}
+    >
+      {emoji}
+    </Animated.Text>
   );
 }

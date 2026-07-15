@@ -8,12 +8,15 @@ import {
   ActivityIndicator,
   Linking,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
+  Share,
   Text,
   TextInput,
   View,
 } from 'react-native';
+import * as FileSystem from 'expo-file-system/legacy';
 import {
   MIN_WALLET_TOPUP_KOBO,
   TransactionType,
@@ -23,6 +26,7 @@ import {
 import { Card, Screen, colors, radius, spacing, typography, useToast } from '@noni/ui';
 import { api } from '../../api/client';
 import { getSocket } from '../../realtime/socket';
+import { useAuthStore } from '../../stores/authStore';
 import { formatNaira } from '../../utils/formatters';
 import type { AppStackParamList, AppTabParamList } from '../../navigation/RootNavigator';
 
@@ -49,6 +53,19 @@ function formatDate(iso: string): string {
 
 function isCredit(t: TransactionType): boolean {
   return t === TransactionType.TOPUP || t === TransactionType.REFUND;
+}
+
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const result = String(reader.result ?? '');
+      // Strip the data:...;base64, prefix.
+      resolve(result.slice(result.indexOf(',') + 1));
+    };
+    reader.onerror = () => reject(new Error('Could not read the statement'));
+    reader.readAsDataURL(blob);
+  });
 }
 
 export function WalletScreen({ navigation }: Props) {
@@ -100,6 +117,40 @@ export function WalletScreen({ navigation }: Props) {
 
   const parsedNaira = parseInt(amountNaira.replace(/\D/g, ''), 10) || 0;
   const amountValid = parsedNaira >= MIN_TOPUP_NAIRA;
+
+  const [exporting, setExporting] = useState(false);
+
+  // F-028 — download the payment history statement as a PDF.
+  async function downloadStatement() {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const token = useAuthStore.getState().accessToken;
+      const res = await fetch(api.paymentHistoryExportUrl(), {
+        headers: { Authorization: `Bearer ${token ?? ''}` },
+      });
+      if (!res.ok) throw new Error(`Export failed (${res.status})`);
+      const base64 = await blobToBase64(await res.blob());
+      const fileUri = `${FileSystem.cacheDirectory ?? ''}noni-statement-${Date.now()}.pdf`;
+      await FileSystem.writeAsStringAsync(fileUri, base64, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      if (Platform.OS === 'ios') {
+        try {
+          await Share.share({ url: fileUri });
+        } catch {
+          // Sharing is best-effort; the file is saved either way.
+        }
+        toast.success('Statement ready.', 'Download complete');
+      } else {
+        toast.success(`Saved to ${fileUri.replace('file://', '')}`, 'Statement saved');
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Try again', 'Could not download');
+    } finally {
+      setExporting(false);
+    }
+  }
 
   async function confirmTopup(paymentOption?: 'opay') {
     if (!amountValid || submitting) return;
@@ -255,6 +306,22 @@ export function WalletScreen({ navigation }: Props) {
               })}
             </View>
           )}
+
+          {/* F-028 — PDF statement export. */}
+          <Pressable
+            onPress={() => void downloadStatement()}
+            disabled={exporting}
+            hitSlop={8}
+            style={({ pressed }) => ({
+              marginTop: spacing.md,
+              alignItems: 'center',
+              opacity: exporting ? 0.5 : pressed ? 0.7 : 1,
+            })}
+          >
+            <Text style={{ ...typography.body, color: colors.secondary }}>
+              {exporting ? 'Preparing statement…' : 'Download statement (PDF)'}
+            </Text>
+          </Pressable>
         </View>
       </ScrollView>
 

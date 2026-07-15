@@ -2,6 +2,7 @@
 import type { Tier, SessionType } from '@noni/types';
 import { PRIORITY_QUEUE_FEE_KOBO, TIER_PRICING } from '@noni/types';
 import { prisma } from '../models/prisma.js';
+import { redis } from '../models/redis.js';
 import { publishToRoom, rooms } from '../realtime/publish.js';
 import { encryptNote, decryptNote } from '../utils/appEncryption.js';
 import { BadRequest, Forbidden, NotFound } from '../utils/errors.js';
@@ -77,7 +78,10 @@ export const sessionService = {
       });
     }
 
-    const queue = await queueService.enqueue(session.id, { priority: isPriority });
+    const queue = await queueService.enqueue(session.id, {
+      priority: isPriority,
+      preferredAgentId: args.preferredAgentId,
+    });
     return {
       session: serialize(session),
       queuePosition: queue.position,
@@ -266,6 +270,95 @@ export const sessionService = {
       });
       logger.warn({ agentId: agent.id, newAvg, newCount }, 'agent flagged for review (F-035)');
     }
+  },
+
+  // ── F-014: text → voice upgrade ─────────────────────────────────────────
+  // User asks, agent must accept; billing adjusts to the voice rate (T3) by
+  // charging the wallet the difference from that moment.
+
+  async requestVoiceUpgrade(sessionId: string, userId: string) {
+    const session = await prisma.session.findUnique({
+      where: { id: sessionId },
+      include: { agent: { select: { userId: true, sessionTypes: true } } },
+    });
+    if (!session) throw NotFound('SESSION_NOT_FOUND', 'Session not found');
+    if (session.userId !== userId) throw Forbidden('NOT_SESSION_USER', 'Not your session');
+    if (session.status !== 'ACTIVE' || session.sessionType !== 'TEXT') {
+      throw BadRequest('NOT_UPGRADABLE', 'Only active text sessions can switch to voice');
+    }
+    if (!session.agent?.sessionTypes.includes('VOICE')) {
+      throw BadRequest('AGENT_TEXT_ONLY', 'This listener offers text sessions only');
+    }
+    const target = TIER_PRICING.T3;
+    const deltaKobo = session.paidFromSubscription
+      ? 0 // bundle covers T1/T3 alike (F-026)
+      : Math.max(0, target.priceKobo - session.amountChargedKobo);
+
+    await redis.set(`session:upgrade:${sessionId}`, String(deltaKobo), 'EX', 5 * 60);
+    await publishToRoom(rooms.session(sessionId), 'voice_upgrade_requested', {
+      sessionId,
+      deltaKobo,
+      targetTier: 'T3',
+    });
+    return { deltaKobo };
+  },
+
+  async respondVoiceUpgrade(sessionId: string, agentUserId: string, accept: boolean) {
+    const session = await prisma.session.findUnique({
+      where: { id: sessionId },
+      include: { agent: true },
+    });
+    if (!session) throw NotFound('SESSION_NOT_FOUND', 'Session not found');
+    if (session.agent?.userId !== agentUserId) {
+      throw Forbidden('NOT_SESSION_AGENT', 'Not your session');
+    }
+    const pending = await redis.get(`session:upgrade:${sessionId}`);
+    if (pending === null) throw BadRequest('NO_PENDING_UPGRADE', 'No upgrade request pending');
+    await redis.del(`session:upgrade:${sessionId}`);
+
+    if (!accept) {
+      await publishToRoom(rooms.session(sessionId), 'voice_upgrade_declined', { sessionId });
+      return { upgraded: false };
+    }
+
+    const deltaKobo = Number(pending);
+    if (deltaKobo > 0) {
+      const debited = await prisma.user.updateMany({
+        where: { id: session.userId, walletBalanceKobo: { gte: deltaKobo } },
+        data: { walletBalanceKobo: { decrement: deltaKobo } },
+      });
+      if (debited.count === 0) {
+        await publishToRoom(rooms.session(sessionId), 'voice_upgrade_failed', {
+          sessionId,
+          reason: 'INSUFFICIENT_FUNDS',
+        });
+        throw BadRequest('INSUFFICIENT_FUNDS', 'User wallet cannot cover the voice rate');
+      }
+      await prisma.walletTransaction.create({
+        data: {
+          userId: session.userId,
+          type: 'SESSION_DEBIT',
+          amountKobo: -deltaKobo,
+          sessionId,
+          metadata: { reason: 'VOICE_UPGRADE' },
+        },
+      });
+    }
+
+    await prisma.session.update({
+      where: { id: sessionId },
+      data: {
+        tier: 'T3',
+        sessionType: 'VOICE',
+        amountChargedKobo: session.amountChargedKobo + deltaKobo,
+        agentPayoutKobo: TIER_PRICING.T3.agentCostKobo,
+      },
+    });
+    await publishToRoom(rooms.session(sessionId), 'voice_upgrade_accepted', {
+      sessionId,
+      tier: 'T3',
+    });
+    return { upgraded: true };
   },
 
   async flagCrisis(sessionId: string) {

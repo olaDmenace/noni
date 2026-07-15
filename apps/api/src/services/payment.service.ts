@@ -250,6 +250,44 @@ export const paymentService = {
     };
   },
 
+  /** F-028: payment history as a PDF (downloadable on request). */
+  async exportHistoryPdf(userId: string): Promise<Buffer> {
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw NotFound('USER_NOT_FOUND', 'User not found');
+    const txns = await prisma.walletTransaction.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      take: 500,
+    });
+
+    const { default: PDFDocument } = await import('pdfkit');
+    const doc = new PDFDocument({ margin: 48, size: 'A4' });
+    const chunks: Buffer[] = [];
+    doc.on('data', (c: Buffer) => chunks.push(c));
+    const finished = new Promise<Buffer>((resolve) =>
+      doc.on('end', () => resolve(Buffer.concat(chunks))),
+    );
+
+    doc.fontSize(18).text('Noni — Payment History');
+    doc.fontSize(10).fillColor('#666')
+      .text(`Account alias: ${user.alias}`)
+      .text(`Generated: ${new Date().toISOString().slice(0, 19).replace('T', ' ')} UTC`)
+      .moveDown();
+
+    doc.fillColor('#000').fontSize(10);
+    const naira = (kobo: number) => `${kobo < 0 ? '-' : ''}NGN ${(Math.abs(kobo) / 100).toLocaleString('en-NG')}`;
+    for (const t of txns) {
+      doc.text(
+        `${t.createdAt.toISOString().slice(0, 10)}  ${t.type.padEnd(14)} ${naira(t.amountKobo).padStart(16)}  ${t.providerRef ?? ''}`,
+      );
+    }
+    if (txns.length === 0) doc.text('No transactions.');
+    doc.moveDown().fontSize(8).fillColor('#666')
+      .text('All amounts in Nigerian Naira. Session content is never stored — this report contains payments only.');
+    doc.end();
+    return finished;
+  },
+
   /**
    * F-034: weekly agent payout via Flutterwave Transfers. Dev mode marks the
    * payout SUCCESS immediately so the flow is testable end-to-end.

@@ -3,6 +3,8 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { prisma } from '../models/prisma.js';
+import { applicationService } from '../services/application.service.js';
+import { orgService } from '../services/org.service.js';
 import { safetyService } from '../services/safety.service.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { NotFound } from '../utils/errors.js';
@@ -109,6 +111,63 @@ adminRouter.get(
       },
     });
     res.json({ agents });
+  }),
+);
+
+// F-030: listener application review.
+adminRouter.get(
+  '/applications',
+  asyncHandler(async (_req, res) => {
+    res.json({ applications: await applicationService.listPending() });
+  }),
+);
+
+adminRouter.post(
+  '/applications/:id/review',
+  asyncHandler(async (req, res) => {
+    const { approve } = z.object({ approve: z.boolean() }).parse(req.body);
+    res.json(await applicationService.review(req.params.id, req.user!.sub, approve));
+  }),
+);
+
+// B2B: organizations and access codes.
+adminRouter.post(
+  '/orgs',
+  asyncHandler(async (req, res) => {
+    const { name, contactNote } = z
+      .object({ name: z.string().min(2).max(120), contactNote: z.string().max(500).optional() })
+      .parse(req.body);
+    res.status(201).json(await orgService.createOrg(name, contactNote));
+  }),
+);
+
+adminRouter.get(
+  '/orgs',
+  asyncHandler(async (_req, res) => {
+    res.json({ orgs: await orgService.listOrgs() });
+  }),
+);
+
+adminRouter.post(
+  '/orgs/:id/codes',
+  asyncHandler(async (req, res) => {
+    const body = z
+      .object({
+        tier: z.enum(['T6', 'T7']),
+        count: z.number().int().min(1).max(500),
+        maxRedemptions: z.number().int().min(1).max(10000).optional(),
+        expiresAt: z.string().datetime().optional(),
+      })
+      .parse(req.body);
+    res.status(201).json({
+      codes: await orgService.createCodes({
+        orgId: req.params.id,
+        tier: body.tier,
+        count: body.count,
+        maxRedemptions: body.maxRedemptions,
+        expiresAt: body.expiresAt ? new Date(body.expiresAt) : undefined,
+      }),
+    });
   }),
 );
 

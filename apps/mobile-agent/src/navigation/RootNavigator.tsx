@@ -13,6 +13,8 @@ import { SessionScreen } from '../screens/session/SessionScreen';
 import { EarningsScreen } from '../screens/earnings/EarningsScreen';
 import { ProfileScreen } from '../screens/profile/ProfileScreen';
 import { CrisisTrainingScreen } from '../screens/training/CrisisTrainingScreen';
+import { PracticeScreen } from '../screens/training/PracticeScreen';
+import { ScheduleScreen } from '../screens/queue/ScheduleScreen';
 
 export type AuthStackParamList = {
   Login: undefined;
@@ -29,6 +31,8 @@ export type AppStackParamList = {
   Tabs: undefined;
   Session: { sessionId: string };
   CrisisTraining: undefined;
+  Schedule: undefined;
+  Practice: undefined;
 };
 
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
@@ -107,6 +111,16 @@ function AppNavigator() {
           options={{ headerShown: true, title: 'Session' }}
         />
         <AppStack.Screen name="CrisisTraining" component={CrisisTrainingScreen} />
+        <AppStack.Screen
+          name="Schedule"
+          component={ScheduleScreen}
+          options={{ headerShown: true, title: 'Schedule' }}
+        />
+        <AppStack.Screen
+          name="Practice"
+          component={PracticeScreen}
+          options={{ headerShown: true, title: 'Practice' }}
+        />
       </AppStack.Navigator>
       {/* App-wide socket + incoming-request modal (F-029, F-032). Lives with
           the authenticated tree so logout tears the socket down. */}

@@ -11,7 +11,10 @@ config.resolver.nodeModulesPaths = [
   path.resolve(projectRoot, 'node_modules'),
   path.resolve(workspaceRoot, 'node_modules'),
 ];
-config.resolver.disableHierarchicalLookup = true;
+// Hierarchical lookup stays ON: packages with nested deps (react-native-webrtc →
+// event-target-shim@6) resolve from their own node_modules. npm hoisting keeps
+// the tree deduped; expo-doctor also expects the default here.
+config.resolver.disableHierarchicalLookup = false;
 
 // Shared packages use NodeNext-style `./x.js` specifiers (required by the API's
 // tsconfig). Metro resolves file paths literally, so retry without the extension.

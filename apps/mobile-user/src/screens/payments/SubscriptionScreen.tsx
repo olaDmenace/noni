@@ -1,7 +1,15 @@
 // F-026 — Monthly plans. Wallet-funded T6/T7 subscriptions.
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import React from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { NoniApiError } from '@noni/api-client';
 import { TIER_PRICING, type SubscriptionState, type Tier } from '@noni/types';
 import { Card, Screen, colors, radius, spacing, typography, useToast } from '@noni/ui';
@@ -32,6 +40,9 @@ function formatRenewal(iso: string): string {
   });
 }
 
+// B2B org access codes look like NONI-XXXXXXXX.
+const CODE_PATTERN = /^NONI-[A-Z0-9]{8}$/;
+
 export function SubscriptionScreen() {
   const toast = useToast();
   const queryClient = useQueryClient();
@@ -39,6 +50,10 @@ export function SubscriptionScreen() {
     queryKey: ['subscription'],
     queryFn: () => api.getSubscription(),
   });
+
+  const [codeOpen, setCodeOpen] = useState(false);
+  const [code, setCode] = useState('');
+  const codeValid = CODE_PATTERN.test(code);
 
   function applyState(next: SubscriptionState) {
     queryClient.setQueryData(['subscription'], { subscription: next });
@@ -86,6 +101,36 @@ export function SubscriptionScreen() {
       toast.info('You can start again any time.', 'Plan cancelled');
     },
     onError: onMutationError,
+  });
+  // B2B — redeem an organisation access code for a sponsored plan.
+  const redeemMutation = useMutation({
+    mutationFn: (c: string) => api.redeemAccessCode(c),
+    onSuccess: (res) => {
+      void queryClient.invalidateQueries({ queryKey: ['subscription'] });
+      setCode('');
+      setCodeOpen(false);
+      toast.success(
+        `${planName(res.tier)} — ${res.sessionsRemaining} sessions, renews ${formatRenewal(
+          res.renewsAt,
+        )}.`,
+        'Code accepted',
+      );
+    },
+    onError: (err) => {
+      if (err instanceof NoniApiError && err.code === 'CODE_INVALID') {
+        toast.error(
+          'That code doesn’t match an active programme. Check the spelling — it should look like NONI-XXXXXXXX.',
+          'Code not recognised',
+        );
+      } else if (err instanceof NoniApiError && err.code === 'CODE_EXHAUSTED') {
+        toast.warning(
+          'This code has been fully redeemed. Ask your organisation for a new one.',
+          'Code fully used',
+        );
+      } else {
+        onMutationError(err);
+      }
+    },
   });
 
   const busy =
@@ -278,6 +323,65 @@ export function SubscriptionScreen() {
             </Text>
           </>
         )}
+
+        {/* B2B — organisation access codes. */}
+        <View style={{ marginTop: spacing.xl }}>
+          {!codeOpen ? (
+            <Pressable
+              onPress={() => setCodeOpen(true)}
+              hitSlop={8}
+              style={({ pressed }) => ({ alignItems: 'center', opacity: pressed ? 0.7 : 1 })}
+            >
+              <Text style={{ ...typography.body, color: colors.secondary }}>
+                Have an access code?
+              </Text>
+            </Pressable>
+          ) : (
+            <Card>
+              <Text style={{ ...typography.bodyStrong, color: colors.text }}>
+                Redeem an access code
+              </Text>
+              <Text style={{ ...typography.caption, color: colors.textMuted, marginTop: spacing.xs }}>
+                From your school, employer, or organisation. Codes look like NONI-XXXXXXXX.
+              </Text>
+              <TextInput
+                value={code}
+                onChangeText={(v) => setCode(v.toUpperCase().replace(/\s/g, ''))}
+                autoCapitalize="characters"
+                autoCorrect={false}
+                placeholder="NONI-XXXXXXXX"
+                placeholderTextColor={colors.textDim}
+                style={{
+                  ...typography.mono,
+                  color: colors.text,
+                  backgroundColor: colors.surfaceElev,
+                  borderColor: colors.borderStrong,
+                  borderWidth: 1,
+                  borderRadius: radius.md,
+                  paddingHorizontal: spacing.md,
+                  paddingVertical: spacing.md,
+                  marginTop: spacing.md,
+                }}
+              />
+              <Pressable
+                onPress={() => redeemMutation.mutate(code)}
+                disabled={!codeValid || redeemMutation.isPending}
+                style={({ pressed }) => ({
+                  marginTop: spacing.md,
+                  backgroundColor: colors.primary,
+                  borderRadius: radius.md,
+                  paddingVertical: spacing.md,
+                  alignItems: 'center',
+                  opacity: !codeValid || redeemMutation.isPending ? 0.5 : pressed ? 0.88 : 1,
+                })}
+              >
+                <Text style={{ ...typography.body, color: colors.primaryInk, fontWeight: '600' }}>
+                  {redeemMutation.isPending ? 'Checking…' : 'Redeem code'}
+                </Text>
+              </Pressable>
+            </Card>
+          )}
+        </View>
       </ScrollView>
     </Screen>
   );

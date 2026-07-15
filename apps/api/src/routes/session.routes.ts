@@ -58,6 +58,34 @@ sessionRouter.get(
   }),
 );
 
+// F-014: text → voice upgrade.
+sessionRouter.post(
+  '/:id/upgrade-request',
+  requireAuth,
+  requireRole('USER'),
+  asyncHandler(async (req, res) => {
+    res.json(await sessionService.requestVoiceUpgrade(req.params.id, req.user!.sub));
+  }),
+);
+
+sessionRouter.post(
+  '/:id/upgrade-accept',
+  requireAuth,
+  requireRole('AGENT'),
+  asyncHandler(async (req, res) => {
+    res.json(await sessionService.respondVoiceUpgrade(req.params.id, req.user!.sub, true));
+  }),
+);
+
+sessionRouter.post(
+  '/:id/upgrade-decline',
+  requireAuth,
+  requireRole('AGENT'),
+  asyncHandler(async (req, res) => {
+    res.json(await sessionService.respondVoiceUpgrade(req.params.id, req.user!.sub, false));
+  }),
+);
+
 // F-017: private encrypted agent notes.
 sessionRouter.put(
   '/:id/note',

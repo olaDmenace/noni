@@ -53,12 +53,22 @@ export const agentService = {
     if (!agent) throw NotFound('AGENT_NOT_FOUND', 'Agent profile not found');
     if (agent.isSuspended) throw Forbidden('AGENT_SUSPENDED', 'Account under review');
 
-    // S-006 gate. Cannot transition to AVAILABLE without crisis training.
-    if (status === AgentStatus.AVAILABLE && !agent.crisisTrainingPassedAt) {
-      throw BadRequest(
-        'CRISIS_TRAINING_REQUIRED',
-        'Complete crisis training before going online.',
-      );
+    // S-006 gate. Cannot transition to AVAILABLE without crisis training,
+    // and training must be re-taken annually.
+    if (status === AgentStatus.AVAILABLE) {
+      if (!agent.crisisTrainingPassedAt) {
+        throw BadRequest(
+          'CRISIS_TRAINING_REQUIRED',
+          'Complete crisis training before going online.',
+        );
+      }
+      const YEAR_MS = 365 * 24 * 60 * 60 * 1000;
+      if (Date.now() - agent.crisisTrainingPassedAt.getTime() > YEAR_MS) {
+        throw BadRequest(
+          'CRISIS_TRAINING_EXPIRED',
+          'Your crisis training has expired — re-take it to go online.',
+        );
+      }
     }
 
     await prisma.agent.update({ where: { id: agent.id }, data: { status } });

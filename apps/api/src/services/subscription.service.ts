@@ -123,6 +123,19 @@ export const subscriptionService = {
       where: { isActive: true, pausedAt: null, renewsAt: { lte: new Date() } },
     });
     for (const sub of due) {
+      // B2B org-code subscriptions expire at month end instead of auto-debiting.
+      if (sub.providerRef?.startsWith('org-')) {
+        await prisma.subscription.update({
+          where: { id: sub.id },
+          data: { isActive: false, cancelledAt: new Date() },
+        });
+        await notificationService.push(sub.userId, {
+          title: 'Organization plan ended',
+          body: 'Your sponsored month is over. Redeem a new code or subscribe to continue.',
+          data: { type: 'ORG_SUBSCRIPTION_ENDED' },
+        });
+        continue;
+      }
       const pricing = TIER_PRICING[sub.tier as Tier];
       const debited = await prisma.user.updateMany({
         where: { id: sub.userId, walletBalanceKobo: { gte: pricing.priceKobo } },

@@ -190,22 +190,45 @@ export function AgentListScreen({ navigation }: Props) {
                     >
                       {item.specialties.slice(0, 3).join(' · ')}
                     </Text>
-                    <Text
+                    <View
                       style={{
-                        ...typography.caption,
-                        color:
-                          item.status === AgentStatus.AVAILABLE
-                            ? colors.success
-                            : colors.textDim,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
                         marginTop: 4,
                       }}
                     >
-                      {item.status === AgentStatus.AVAILABLE
-                        ? `Available · ${formatWait(item.estimatedWaitSecs)}`
-                        : item.status === AgentStatus.BUSY
-                          ? 'In a session'
-                          : 'Offline'}
-                    </Text>
+                      <Text
+                        style={{
+                          ...typography.caption,
+                          color:
+                            item.status === AgentStatus.AVAILABLE
+                              ? colors.success
+                              : colors.textDim,
+                        }}
+                      >
+                        {item.status === AgentStatus.AVAILABLE
+                          ? `Available · ${formatWait(item.estimatedWaitSecs)}`
+                          : item.status === AgentStatus.BUSY
+                            ? 'In a session'
+                            : 'Offline'}
+                      </Text>
+                      {/* F-010 — advance booking (T6/T7 perk). */}
+                      <Pressable
+                        onPress={() =>
+                          navigation.navigate('Schedule', {
+                            agentId: item.id,
+                            agentAlias: item.alias,
+                            sessionTypes: item.sessionTypes,
+                          })
+                        }
+                        hitSlop={8}
+                      >
+                        <Text style={{ ...typography.caption, color: colors.secondary }}>
+                          Book ahead ›
+                        </Text>
+                      </Pressable>
+                    </View>
                   </View>
                 </View>
               </Card>

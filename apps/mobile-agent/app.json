@@ -9,14 +9,14 @@
     "newArchEnabled": false,
     "backgroundColor": "#0E0B0A",
     "splash": {
-      "backgroundColor": "#0E0B0A",
-      "resizeMode": "contain"
+      "backgroundColor": "#0E0B0A"
     },
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "ng.noni.agent",
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "Noni Agent needs microphone access for voice sessions."
+        "NSMicrophoneUsageDescription": "Noni Agent needs microphone access for voice sessions.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -35,8 +35,21 @@
     },
     "plugins": [
       "expo-secure-store",
-      "expo-font"
+      "expo-font",
+      [
+        "@config-plugins/react-native-webrtc",
+        {
+          "cameraPermission": false,
+          "microphonePermission": "Noni Agent needs microphone access for voice sessions."
+        }
+      ]
     ],
-    "owner": "oladmenace"
+    "owner": "oladmenace",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/3a7af4c4-0a6b-47e2-acd2-c9aa8c900ff9"
+    }
   }
 }

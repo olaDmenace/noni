@@ -277,3 +277,62 @@ model AgentReport {
   @@index([agentId])
   @@index([reviewedAt])
 }
+
+model ScheduledSession {
+  // F-010: T6/T7 subscribers book an agent + timeslot up to 7 days ahead.
+  id          String   @id @default(uuid())
+  userId      String
+  agentId     String
+  tier        Tier
+  sessionType SessionType
+  scheduledAt DateTime
+  status      String   @default("BOOKED") // BOOKED | STARTED | CANCELLED | MISSED
+  sessionId   String?  // filled when the booking is converted to a live session
+  createdAt   DateTime @default(now())
+
+  @@index([userId, scheduledAt])
+  @@index([agentId, scheduledAt])
+  @@index([status, scheduledAt])
+}
+
+model Organization {
+  // B2B: universities / employers buying bulk subscriptions.
+  id          String          @id @default(uuid())
+  name        String
+  contactNote String?
+  isActive    Boolean         @default(true)
+  codes       OrgAccessCode[]
+  createdAt   DateTime        @default(now())
+}
+
+model OrgAccessCode {
+  // Redeemable code granting a subscription tier without a wallet charge.
+  id          String       @id @default(uuid())
+  orgId       String
+  org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  code        String       @unique
+  tier        Tier
+  maxRedemptions Int       @default(1)
+  redemptions Int          @default(0)
+  expiresAt   DateTime?
+  createdAt   DateTime     @default(now())
+
+  @@index([orgId])
+}
+
+model AgentApplication {
+  // F-030: replaces manual SQL role promotion. Admin reviews out-of-band
+  // identity verification, then approves in the admin console.
+  id          String    @id @default(uuid())
+  userId      String    @unique
+  motivation  String
+  specialties String[]
+  languages   String[]
+  sessionTypes SessionType[]
+  status      String    @default("PENDING") // PENDING | APPROVED | REJECTED
+  reviewedBy  String?
+  reviewedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([status, createdAt])
+}

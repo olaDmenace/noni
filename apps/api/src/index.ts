@@ -6,6 +6,7 @@ import { connectRedis, redis } from './models/redis.js';
 import { createSocketServer } from './realtime/index.js';
 import { paymentService } from './services/payment.service.js';
 import { queueService } from './services/queue.service.js';
+import { schedulingService } from './services/scheduling.service.js';
 import { sessionService } from './services/session.service.js';
 import { subscriptionService } from './services/subscription.service.js';
 import { logger } from './utils/logger.js';
@@ -41,6 +42,7 @@ async function main(): Promise<void> {
         });
         await subscriptionService.sweepRenewals();
         await paymentService.pollPendingTopups();
+        await schedulingService.sweepDue();
       } catch (err) {
         logger.error({ err }, 'sweep failed');
       } finally {

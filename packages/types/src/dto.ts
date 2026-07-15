@@ -174,6 +174,57 @@ export interface CompleteCrisisTrainingResponse {
   feedback: Array<{ questionId: string; correct: boolean; rationale: string }>;
 }
 
+// ── Advance scheduling (F-010) ──────────────────────────────────────────
+export interface CreateBookingBody {
+  agentId: string;
+  tier: Extract<Tier, 'T1' | 'T3'>;
+  sessionType: SessionType;
+  scheduledAt: string; // ISO datetime
+}
+export interface Booking {
+  id: string;
+  userId: string;
+  agentId: string;
+  tier: Tier;
+  sessionType: SessionType;
+  scheduledAt: string;
+  status: 'BOOKED' | 'STARTED' | 'CANCELLED' | 'MISSED';
+  sessionId: string | null;
+}
+
+// ── Voice upgrade (F-014) ───────────────────────────────────────────────
+export interface UpgradeRequestResponse {
+  deltaKobo: number;
+}
+export interface UpgradeRespondResponse {
+  upgraded: boolean;
+}
+
+// ── Agent applications (F-030) ──────────────────────────────────────────
+export interface AgentApplyBody {
+  motivation: string;
+  specialties: string[];
+  languages: string[];
+  sessionTypes: SessionType[];
+}
+export interface AgentApplicationState {
+  applicationId: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  createdAt?: string;
+}
+
+// ── Practice bot (F-030) ────────────────────────────────────────────────
+export interface PracticeMessageResponse {
+  reply: string;
+}
+
+// ── B2B org codes ───────────────────────────────────────────────────────
+export interface RedeemCodeResponse {
+  tier: Tier;
+  sessionsRemaining: number;
+  renewsAt: string;
+}
+
 // ── Errors ──────────────────────────────────────────────────────────────
 export interface ApiError {
   error: string;
@@ -219,6 +270,16 @@ export interface WsWalletUpdateEvent {
 export interface WsWebrtcSignalEvent {
   sessionId: string;
   data: unknown;
+}
+export interface WsReactionEvent {
+  emoji: string;
+  sender: 'USER' | 'AGENT';
+  timestamp: number;
+}
+export interface WsVoiceUpgradeRequestedEvent {
+  sessionId: string;
+  deltaKobo: number;
+  targetTier: Tier;
 }
 export interface WsTurnCredentialsEvent {
   urls: string[];

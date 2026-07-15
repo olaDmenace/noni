@@ -3,6 +3,9 @@ import { z } from 'zod';
 import { AgentStatus, SessionType } from '@noni/types';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { agentService } from '../services/agent.service.js';
+import { aiService } from '../services/ai.service.js';
+import { applicationService } from '../services/application.service.js';
+import { schedulingService } from '../services/scheduling.service.js';
 import { trainingService } from '../services/training.service.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 
@@ -110,6 +113,62 @@ agentRouter.get(
   requireRole('AGENT'),
   asyncHandler(async (req, res) => {
     res.json({ payouts: await agentService.listPayouts(req.user!.sub) });
+  }),
+);
+
+// F-030: apply to become a listener (any signed-in user).
+agentRouter.post(
+  '/apply',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const body = z
+      .object({
+        motivation: z.string().min(20).max(2000),
+        specialties: z.array(z.string().min(2).max(40)).min(1).max(10),
+        languages: z.array(z.string().min(2).max(20)).min(1).max(5),
+        sessionTypes: z.array(z.nativeEnum(SessionType)).min(1),
+      })
+      .parse(req.body);
+    res.status(201).json(await applicationService.apply({ userId: req.user!.sub, ...body }));
+  }),
+);
+
+agentRouter.get(
+  '/apply/me',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    res.json({ application: await applicationService.myApplication(req.user!.sub) });
+  }),
+);
+
+// F-030: practice session with the bot before going live.
+agentRouter.post(
+  '/me/practice/message',
+  requireAuth,
+  requireRole('AGENT'),
+  asyncHandler(async (req, res) => {
+    const { message } = z.object({ message: z.string().min(1).max(2000) }).parse(req.body);
+    res.json(await aiService.practiceChat(req.user!.sub, message));
+  }),
+);
+
+agentRouter.delete(
+  '/me/practice',
+  requireAuth,
+  requireRole('AGENT'),
+  asyncHandler(async (req, res) => {
+    await aiService.resetPractice(req.user!.sub);
+    res.status(204).end();
+  }),
+);
+
+// F-010: the agent's upcoming booked sessions.
+agentRouter.get(
+  '/me/schedule',
+  requireAuth,
+  requireRole('AGENT'),
+  asyncHandler(async (req, res) => {
+    res.json({ bookings: await schedulingService.listForAgent(req.user!.sub) });
   }),
 );
 

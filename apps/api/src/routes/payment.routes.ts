@@ -32,6 +32,19 @@ paymentRouter.get(
   }),
 );
 
+// F-028: downloadable PDF of the full payment history.
+paymentRouter.get(
+  '/history/export',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const pdf = await paymentService.exportHistoryPdf(req.user!.sub);
+    res
+      .setHeader('Content-Type', 'application/pdf')
+      .setHeader('Content-Disposition', 'attachment; filename="noni-payment-history.pdf"')
+      .send(pdf);
+  }),
+);
+
 paymentRouter.post(
   '/initiate',
   parseJson,

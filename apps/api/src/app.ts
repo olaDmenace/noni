@@ -10,6 +10,7 @@ import { aiRouter } from './routes/ai.routes.js';
 import { authRouter } from './routes/auth.routes.js';
 import { healthRouter } from './routes/health.routes.js';
 import { paymentRouter } from './routes/payment.routes.js';
+import { scheduleRouter } from './routes/schedule.routes.js';
 import { sessionRouter } from './routes/session.routes.js';
 import { subscriptionRouter } from './routes/subscription.routes.js';
 import { userRouter } from './routes/user.routes.js';
@@ -38,6 +39,7 @@ export function createApp(): Express {
   app.use('/v1/ai', aiRouter);
   app.use('/v1/agents', agentRouter);
   app.use('/v1/subscriptions', subscriptionRouter);
+  app.use('/v1/schedule', scheduleRouter);
   app.use('/v1/users', userRouter);
   app.use('/v1/admin', adminRouter);
 

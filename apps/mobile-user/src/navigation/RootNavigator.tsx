@@ -17,6 +17,7 @@ import { AgentListScreen } from '../screens/agents/AgentListScreen';
 import { AiChatScreen } from '../screens/session/AiChatScreen';
 import { QueueScreen } from '../screens/session/QueueScreen';
 import { HumanSessionScreen } from '../screens/session/HumanSessionScreen';
+import { ScheduleScreen } from '../screens/session/ScheduleScreen';
 import { WalletScreen } from '../screens/payments/WalletScreen';
 import { SubscriptionScreen } from '../screens/payments/SubscriptionScreen';
 import { SettingsScreen } from '../screens/settings/SettingsScreen';
@@ -42,6 +43,7 @@ export type AppStackParamList = {
   AiChat: { sessionId: string };
   Queue: { sessionId: string };
   HumanSession: { sessionId: string; agentAlias: string; sessionType: SessionType };
+  Schedule: { agentId: string; agentAlias: string; sessionTypes: SessionType[] };
   Subscription: undefined;
   SetPin: undefined;
   Safeguarding: undefined;
@@ -127,6 +129,17 @@ function AppNavigator() {
       <AppStack.Screen name="AiChat" component={AiChatScreen} />
       <AppStack.Screen name="Queue" component={QueueScreen} options={{ headerShown: true, title: 'Finding a listener' }} />
       <AppStack.Screen name="HumanSession" component={HumanSessionScreen} />
+      <AppStack.Screen
+        name="Schedule"
+        component={ScheduleScreen}
+        options={{
+          headerShown: true,
+          title: 'Book ahead',
+          headerStyle: { backgroundColor: colors.background },
+          headerTintColor: colors.text,
+          headerTitleStyle: { fontFamily: fonts.display, fontSize: 20 },
+        }}
+      />
       <AppStack.Screen
         name="Subscription"
         component={SubscriptionScreen}

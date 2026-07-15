@@ -1,12 +1,15 @@
-// Active session — chat, timer, crisis controls, private notes.
+// Active session — chat, timer, crisis controls, private notes, voice
+// (F-013), voice upgrade decisions (F-014), quick reactions (F-016).
 //
 // Privacy rule (schema.prisma header): message content is NEVER persisted.
 // Messages live in component state only and evaporate when this screen
 // unmounts. Notes go through PUT /note which encrypts server-side (F-017).
+// Reactions are relay-only and render as a fading overlay — never stored.
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  Animated,
   FlatList,
   KeyboardAvoidingView,
   Modal,
@@ -18,12 +21,17 @@ import {
   View,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { SessionType } from '@noni/types';
 import type {
   WsCrisisAlertEvent,
   WsMessageEvent,
+  WsReactionEvent,
   WsSessionEndEvent,
   WsTypingEvent,
+  WsVoiceUpgradeRequestedEvent,
+  WsWebrtcSignalEvent,
 } from '@noni/types';
+import { NoniApiError } from '@noni/api-client';
 import {
   Button,
   CrisisAlert,
@@ -37,6 +45,7 @@ import {
 } from '@noni/ui';
 import { api } from '../../api/client';
 import { connectSocket, getSocket } from '../../realtime/socket';
+import { createVoiceCall, isVoiceAvailable, type VoiceCall } from '../../realtime/webrtc';
 import { formatDuration, formatNaira } from '../../utils/formatters';
 import type { AppStackParamList } from '../../navigation/RootNavigator';
 
@@ -44,6 +53,15 @@ type Props = NativeStackScreenProps<AppStackParamList, 'Session'>;
 
 interface ChatMessage extends WsMessageEvent {
   id: string;
+}
+
+// F-016 — allowlisted quick reactions (server drops anything else).
+const REACTION_EMOJI = ['❤️', '🙏', '😢'] as const;
+
+interface FloatingReaction {
+  id: number;
+  emoji: string;
+  opacity: Animated.Value;
 }
 
 const END_REASON_COPY: Record<WsSessionEndEvent['reason'], string> = {
@@ -72,15 +90,46 @@ export function SessionScreen({ route, navigation }: Props) {
   const [notesVisible, setNotesVisible] = useState(false);
   const [note, setNote] = useState<string | null>(null);
 
+  // Voice (F-013/F-014). `voiceMode` flips on for VOICE sessions and after an
+  // accepted upgrade. Call state is local — audio never touches our servers.
+  const voiceAvailable = isVoiceAvailable();
+  const [voiceMode, setVoiceMode] = useState(false);
+  const [callState, setCallState] = useState<'idle' | 'connecting' | 'active'>('idle');
+  const [callSecs, setCallSecs] = useState(0);
+  const [muted, setMuted] = useState(false);
+  const [upgradeOffer, setUpgradeOffer] = useState<WsVoiceUpgradeRequestedEvent | null>(null);
+  const [upgradeBusy, setUpgradeBusy] = useState(false);
+  const callRef = useRef<VoiceCall | null>(null);
+  const pendingIce = useRef<unknown[]>([]);
+
+  // Quick reactions (F-016) — fading overlay, never stored.
+  const [reactions, setReactions] = useState<FloatingReaction[]>([]);
+  const reactionSeq = useRef(0);
+
   const listRef = useRef<FlatList<ChatMessage>>(null);
   const msgSeq = useRef(0);
   const typingRef = useRef(false);
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const sessionQuery = useQuery({
+    queryKey: ['session', sessionId],
+    queryFn: () => api.getSession(sessionId),
+    staleTime: Infinity,
+  });
+  const isVoiceSession = voiceMode || sessionQuery.data?.sessionType === SessionType.VOICE;
+
   useEffect(() => {
     const t = setInterval(() => setElapsed((e) => e + 1), 1000);
     return () => clearInterval(t);
   }, []);
+
+  // In-call elapsed timer.
+  useEffect(() => {
+    if (callState !== 'active') return;
+    setCallSecs(0);
+    const t = setInterval(() => setCallSecs((s) => s + 1), 1000);
+    return () => clearInterval(t);
+  }, [callState]);
 
   // ── Socket room lifecycle ────────────────────────────────────────────
   useEffect(() => {
@@ -108,12 +157,49 @@ export function SessionScreen({ route, navigation }: Props) {
     const onErrorEvent = (event: { code?: string }) =>
       toast.error(event?.code ?? 'Something went wrong', 'Session');
 
+    // F-016 — incoming reactions (server never echoes our own back).
+    const onReaction = (event: WsReactionEvent) => {
+      if (event.sender !== 'AGENT') showReaction(event.emoji);
+    };
+
+    // F-014 — voice upgrade lifecycle.
+    const onUpgradeRequested = (event: WsVoiceUpgradeRequestedEvent) => {
+      if (event.sessionId === sessionId) setUpgradeOffer(event);
+    };
+    const onUpgradeAccepted = () => {
+      setUpgradeOffer(null);
+      setVoiceMode(true);
+    };
+    const onUpgradeDeclined = () => setUpgradeOffer(null);
+    const onUpgradeFailed = () => {
+      setUpgradeOffer(null);
+      toast.error("The switch to voice didn't go through. Continuing in text.", 'Voice upgrade');
+    };
+
+    // F-013 — WebRTC signalling. The agent is the callee: the user's app
+    // sends the offer; we answer. ICE flows both ways.
+    const onWebrtcOffer = (event: WsWebrtcSignalEvent) => {
+      if (event.sessionId === sessionId) void answerCall(event.data);
+    };
+    const onWebrtcIce = (event: WsWebrtcSignalEvent) => {
+      if (event.sessionId !== sessionId) return;
+      if (callRef.current) void callRef.current.handleRemoteIce(event.data);
+      else pendingIce.current.push(event.data);
+    };
+
     socket.on('message', onMessage);
     socket.on('typing_start', onTypingStart);
     socket.on('typing_stop', onTypingStop);
     socket.on('crisis_alert', onCrisis);
     socket.on('session_end', onEnd);
     socket.on('error_event', onErrorEvent);
+    socket.on('reaction', onReaction);
+    socket.on('voice_upgrade_requested', onUpgradeRequested);
+    socket.on('voice_upgrade_accepted', onUpgradeAccepted);
+    socket.on('voice_upgrade_declined', onUpgradeDeclined);
+    socket.on('voice_upgrade_failed', onUpgradeFailed);
+    socket.on('webrtc_offer', onWebrtcOffer);
+    socket.on('webrtc_ice', onWebrtcIce);
 
     return () => {
       if (typingTimer.current) clearTimeout(typingTimer.current);
@@ -126,9 +212,107 @@ export function SessionScreen({ route, navigation }: Props) {
       socket.off('crisis_alert', onCrisis);
       socket.off('session_end', onEnd);
       socket.off('error_event', onErrorEvent);
+      socket.off('reaction', onReaction);
+      socket.off('voice_upgrade_requested', onUpgradeRequested);
+      socket.off('voice_upgrade_accepted', onUpgradeAccepted);
+      socket.off('voice_upgrade_declined', onUpgradeDeclined);
+      socket.off('voice_upgrade_failed', onUpgradeFailed);
+      socket.off('webrtc_offer', onWebrtcOffer);
+      socket.off('webrtc_ice', onWebrtcIce);
+      // Tear the call down with the screen.
+      callRef.current?.close();
+      callRef.current = null;
+      pendingIce.current = [];
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
+
+  // ── Voice call (F-013, agent = callee) ───────────────────────────────
+  async function answerCall(offer: unknown) {
+    if (!isVoiceAvailable()) return;
+    const socket = getSocket();
+    if (!socket) return;
+    try {
+      setCallState('connecting');
+      callRef.current?.close();
+      const turn = await api.getTurnCredentials(sessionId);
+      const call = await createVoiceCall(turn, {
+        onLocalIce: (candidate) => socket.emit('webrtc_ice', { sessionId, data: candidate }),
+        onConnected: () => setCallState('active'),
+        onEnded: () => {
+          // Far side dropped — free the mic, keep the chat alive.
+          callRef.current?.close();
+          callRef.current = null;
+          setCallState('idle');
+          setMuted(false);
+        },
+      });
+      callRef.current = call;
+      const answer = await call.handleOffer(offer);
+      socket.emit('webrtc_answer', { sessionId, data: answer });
+      for (const candidate of pendingIce.current.splice(0)) {
+        void call.handleRemoteIce(candidate);
+      }
+    } catch {
+      setCallState('idle');
+      toast.error('Could not connect the call. Chat still works.', 'Voice');
+    }
+  }
+
+  function hangUp() {
+    callRef.current?.close();
+    callRef.current = null;
+    setCallState('idle');
+    setMuted(false);
+  }
+
+  function toggleMute() {
+    const next = !muted;
+    callRef.current?.setMuted(next);
+    setMuted(next);
+  }
+
+  // ── Voice upgrade decision (F-014) ───────────────────────────────────
+  async function respondToUpgrade(acceptIt: boolean) {
+    if (!upgradeOffer || upgradeBusy) return;
+    setUpgradeBusy(true);
+    try {
+      if (acceptIt) {
+        await api.acceptVoiceUpgrade(sessionId);
+        setVoiceMode(true); // room event confirms; flip locally too
+      } else {
+        await api.declineVoiceUpgrade(sessionId);
+      }
+      setUpgradeOffer(null);
+    } catch (err) {
+      setUpgradeOffer(null);
+      if (err instanceof NoniApiError && err.code === 'INSUFFICIENT_FUNDS') {
+        toast.error("Their wallet couldn't cover the upgrade. Continuing in text.", 'Voice upgrade');
+      } else {
+        toast.error(err instanceof Error ? err.message : 'Try again', 'Voice upgrade');
+      }
+    } finally {
+      setUpgradeBusy(false);
+    }
+  }
+
+  // ── Quick reactions (F-016) — overlay only, never stored ─────────────
+  function showReaction(emoji: string) {
+    reactionSeq.current += 1;
+    const id = reactionSeq.current;
+    const opacity = new Animated.Value(0);
+    setReactions((r) => [...r, { id, emoji, opacity }]);
+    Animated.sequence([
+      Animated.timing(opacity, { toValue: 1, duration: 200, useNativeDriver: true }),
+      Animated.delay(1200),
+      Animated.timing(opacity, { toValue: 0, duration: 450, useNativeDriver: true }),
+    ]).start(() => setReactions((r) => r.filter((x) => x.id !== id)));
+  }
+
+  function sendReaction(emoji: string) {
+    getSocket()?.emit('reaction', { sessionId, emoji });
+    showReaction(emoji); // server relays to the peer only — echo locally
+  }
 
   // ── Typing indicator (outbound, throttled) ───────────────────────────
   function stopTyping() {
@@ -300,6 +484,80 @@ export function SessionScreen({ route, navigation }: Props) {
           </View>
         </View>
 
+        {/* Voice panel (F-013) — only for VOICE sessions / after upgrade */}
+        {isVoiceSession ? (
+          voiceAvailable ? (
+            <View style={styles.voicePanel}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+                <Feather
+                  name={callState === 'active' ? 'phone-call' : 'phone'}
+                  size={16}
+                  color={callState === 'active' ? colors.success : colors.textMuted}
+                />
+                <Text style={{ ...typography.caption, color: colors.text, flex: 1 }}>
+                  {callState === 'active'
+                    ? 'Voice call — live'
+                    : callState === 'connecting'
+                      ? 'Connecting…'
+                      : 'Voice session — waiting for their call'}
+                </Text>
+                {callState === 'active' ? (
+                  <Text style={{ ...typography.mono, color: colors.text }}>
+                    {formatDuration(callSecs)}
+                  </Text>
+                ) : null}
+              </View>
+              {callState !== 'idle' ? (
+                <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm }}>
+                  <Pressable
+                    onPress={toggleMute}
+                    style={({ pressed }) => [
+                      styles.voiceAction,
+                      muted && styles.voiceActionActive,
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <Feather
+                      name={muted ? 'mic-off' : 'mic'}
+                      size={14}
+                      color={muted ? colors.primary : colors.textMuted}
+                    />
+                    <Text
+                      style={{
+                        ...typography.caption,
+                        color: muted ? colors.primary : colors.textMuted,
+                        fontWeight: '600',
+                      }}
+                    >
+                      {muted ? 'Unmute' : 'Mute'}
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={hangUp}
+                    style={({ pressed }) => [
+                      styles.voiceAction,
+                      styles.voiceEnd,
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <Feather name="phone-off" size={14} color={colors.crisis} />
+                    <Text style={{ ...typography.caption, color: colors.crisis, fontWeight: '600' }}>
+                      End call
+                    </Text>
+                  </Pressable>
+                </View>
+              ) : null}
+            </View>
+          ) : (
+            <View style={styles.voiceUnavailable}>
+              <Feather name="phone-off" size={14} color={colors.textDim} />
+              <Text style={{ ...typography.caption, color: colors.textMuted, flex: 1 }}>
+                Voice needs the installed (preview) app — chat still works.
+              </Text>
+            </View>
+          )
+        ) : null}
+
         {/* Chat */}
         <FlatList
           ref={listRef}
@@ -335,11 +593,69 @@ export function SessionScreen({ route, navigation }: Props) {
           }}
         />
 
+        {/* Floating reactions (F-016) — brief, fading, never stored */}
+        <View pointerEvents="none" style={styles.reactionOverlay}>
+          {reactions.map((r) => (
+            <Animated.Text key={r.id} style={{ opacity: r.opacity, fontSize: 36 }}>
+              {r.emoji}
+            </Animated.Text>
+          ))}
+        </View>
+
         {peerTyping ? (
           <Text style={{ ...typography.caption, color: colors.textDim, marginBottom: spacing.xs }}>
             They&apos;re typing…
           </Text>
         ) : null}
+
+        {/* Voice upgrade decision (F-014) */}
+        {upgradeOffer ? (
+          <View style={styles.upgradeCard}>
+            <Text style={{ ...typography.bodyStrong, color: colors.text }}>Switch to voice?</Text>
+            <Text style={{ ...typography.caption, color: colors.textMuted, marginTop: 4 }}>
+              The user asks to switch to voice (+{formatNaira(upgradeOffer.deltaKobo)} billed to
+              them). Accept?
+            </Text>
+            <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md }}>
+              <Pressable
+                onPress={() => void respondToUpgrade(true)}
+                disabled={upgradeBusy}
+                style={({ pressed }) => [
+                  styles.upgradeAccept,
+                  (pressed || upgradeBusy) && styles.pressed,
+                ]}
+              >
+                <Text style={{ ...typography.bodyStrong, color: colors.primaryInk }}>
+                  {upgradeBusy ? 'Working…' : 'Accept'}
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => void respondToUpgrade(false)}
+                disabled={upgradeBusy}
+                style={({ pressed }) => [
+                  styles.upgradeDecline,
+                  (pressed || upgradeBusy) && styles.pressed,
+                ]}
+              >
+                <Text style={{ ...typography.body, color: colors.textMuted }}>Decline</Text>
+              </Pressable>
+            </View>
+          </View>
+        ) : null}
+
+        {/* Quick reactions (F-016) */}
+        <View style={styles.reactionRow}>
+          {REACTION_EMOJI.map((emoji) => (
+            <Pressable
+              key={emoji}
+              onPress={() => sendReaction(emoji)}
+              hitSlop={6}
+              style={({ pressed }) => [styles.reactionButton, pressed && styles.pressed]}
+            >
+              <Text style={{ fontSize: 18 }}>{emoji}</Text>
+            </Pressable>
+          ))}
+        </View>
 
         {/* Composer */}
         <View style={styles.composer}>
@@ -520,6 +836,90 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
   },
   pressed: { opacity: 0.8 },
+  voicePanel: {
+    marginTop: spacing.sm,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  voiceAction: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceElev,
+  },
+  voiceActionActive: {
+    backgroundColor: colors.primaryMuted,
+    borderColor: colors.primaryGlow,
+  },
+  voiceEnd: {
+    backgroundColor: colors.crisisSoft,
+    borderColor: colors.crisis,
+  },
+  voiceUnavailable: {
+    marginTop: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceElev,
+  },
+  reactionOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 140,
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  reactionRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  reactionButton: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  upgradeCard: {
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.primaryGlow,
+    backgroundColor: colors.primaryMuted,
+  },
+  upgradeAccept: {
+    flex: 1,
+    backgroundColor: colors.primary,
+    borderRadius: radius.md,
+    paddingVertical: spacing.sm,
+    alignItems: 'center',
+  },
+  upgradeDecline: {
+    paddingHorizontal: spacing.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingVertical: spacing.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   sheetScrim: {
     flex: 1,
     backgroundColor: 'rgba(14, 11, 10, 0.92)',
