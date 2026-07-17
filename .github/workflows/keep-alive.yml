@@ -1,0 +1,25 @@
+name: Keep API awake
+
+# Render's free tier spins the service down after ~15 idle minutes, giving the
+# next user a ~50s cold start. Ping /readyz every 10 minutes to keep it warm.
+# (GitHub cron is best-effort — occasional delays are fine; the sleep window is
+# 15 minutes. Free service hours: one always-on service fits the 750h/month cap.)
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Ping health endpoint
+        run: |
+          for i in 1 2 3; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 75 https://noni-api.onrender.com/readyz) && \
+            echo "attempt $i -> HTTP $code" && [ "$code" = "200" ] && exit 0
+            sleep 20
+          done
+          echo "API did not answer 200 after 3 attempts" >&2
+          exit 1
