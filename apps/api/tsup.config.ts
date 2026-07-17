@@ -10,4 +10,7 @@ export default defineConfig({
   splitting: false,
   shims: false,
   dts: false,
+  // Workspace packages ship raw TypeScript (main -> src/index.ts) and don't exist
+  // in the runtime image — bundle them into dist instead of importing at runtime.
+  noExternal: [/^@noni\//],
 });
