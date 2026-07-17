@@ -8,8 +8,8 @@
       "distribution": "internal",
       "channel": "preview",
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "http://192.168.0.3:4000",
-        "EXPO_PUBLIC_WS_BASE_URL": "ws://192.168.0.3:4000"
+        "EXPO_PUBLIC_API_BASE_URL": "https://noni-api.onrender.com",
+        "EXPO_PUBLIC_WS_BASE_URL": "wss://noni-api.onrender.com"
       },
       "android": {
         "buildType": "apk"
