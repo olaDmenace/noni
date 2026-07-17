@@ -404,9 +404,11 @@ export function HumanSessionScreen({ route, navigation }: Props) {
       ) : null}
 
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        // SDK 54 is edge-to-edge on Android: the window no longer auto-resizes for
+        // the keyboard, so Android needs explicit padding behavior too.
+        behavior="padding"
         style={{ flex: 1 }}
-        keyboardVerticalOffset={80}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 0}
       >
         <FlatList
           ref={listRef}

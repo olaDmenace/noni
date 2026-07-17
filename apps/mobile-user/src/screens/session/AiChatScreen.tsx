@@ -1,7 +1,9 @@
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Feather } from '@expo/vector-icons';
-import React, { useRef, useState } from 'react';
+import * as FileSystem from 'expo-file-system/legacy';
+import React, { useEffect, useRef, useState } from 'react';
 import {
+  Alert,
   FlatList,
   KeyboardAvoidingView,
   Platform,
@@ -22,21 +24,74 @@ interface Message {
   sender: 'USER' | 'AI' | 'SYSTEM';
 }
 
+// AI chat history lives ON THIS DEVICE ONLY — the server never stores chat
+// content (schema.prisma privacy rule). Deleting the app deletes the history.
+const HISTORY_FILE = `${FileSystem.documentDirectory}noni-ai-chat.json`;
+const HISTORY_MAX_MESSAGES = 200;
+
+const WELCOME: Message = {
+  id: 'welcome',
+  sender: 'AI',
+  text: "I'm here. Take your time. Start anywhere, even the smallest thing.",
+};
+
+async function loadHistory(): Promise<Message[] | null> {
+  try {
+    const info = await FileSystem.getInfoAsync(HISTORY_FILE);
+    if (!info.exists) return null;
+    const parsed = JSON.parse(await FileSystem.readAsStringAsync(HISTORY_FILE)) as Message[];
+    return Array.isArray(parsed) && parsed.length ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+async function saveHistory(messages: Message[]): Promise<void> {
+  try {
+    await FileSystem.writeAsStringAsync(
+      HISTORY_FILE,
+      JSON.stringify(messages.slice(-HISTORY_MAX_MESSAGES)),
+    );
+  } catch {
+    // History is best-effort; never let persistence break the chat.
+  }
+}
+
 export function AiChatScreen({ route, navigation }: Props) {
   const { sessionId } = route.params;
   const [disclaimerVisible, setDisclaimerVisible] = useState(true);
   const [crisisVisible, setCrisisVisible] = useState(false);
   const [crisisMessage, setCrisisMessage] = useState<string | undefined>(undefined);
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: 'welcome',
-      sender: 'AI',
-      text: "I'm here. Take your time. Start anywhere, even the smallest thing.",
-    },
-  ]);
+  const [messages, setMessages] = useState<Message[]>([WELCOME]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const listRef = useRef<FlatList<Message>>(null);
+  const historyLoaded = useRef(false);
+
+  // Restore the on-device history once, then persist every change after that.
+  useEffect(() => {
+    void loadHistory().then((saved) => {
+      if (saved) setMessages(saved);
+      historyLoaded.current = true;
+    });
+  }, []);
+  useEffect(() => {
+    if (historyLoaded.current) void saveHistory(messages);
+  }, [messages]);
+
+  function clearHistory() {
+    Alert.alert('Clear this conversation?', 'History is only stored on this phone.', [
+      { text: 'Keep it', style: 'cancel' },
+      {
+        text: 'Clear',
+        style: 'destructive',
+        onPress: () => {
+          setMessages([WELCOME]);
+          void FileSystem.deleteAsync(HISTORY_FILE, { idempotent: true });
+        },
+      },
+    ]);
+  }
 
   function scrollToEnd() {
     setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 30);
@@ -125,12 +180,17 @@ export function AiChatScreen({ route, navigation }: Props) {
             <Text style={{ ...typography.caption, color: colors.success }}>listening</Text>
           </View>
         </View>
+        <Pressable onPress={clearHistory} hitSlop={12} style={{ padding: spacing.xs }}>
+          <Feather name="trash-2" size={18} color={colors.textDim} />
+        </Pressable>
       </View>
 
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        // SDK 54 is edge-to-edge on Android: the window no longer auto-resizes for
+        // the keyboard, so Android needs explicit padding behavior too.
+        behavior="padding"
         style={{ flex: 1 }}
-        keyboardVerticalOffset={80}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 0}
       >
         <FlatList
           ref={listRef}

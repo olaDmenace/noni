@@ -452,7 +452,9 @@ export function SessionScreen({ route, navigation }: Props) {
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        // SDK 54 is edge-to-edge on Android: the window no longer auto-resizes for
+        // the keyboard, so Android needs explicit padding behavior too.
+        behavior="padding"
         keyboardVerticalOffset={Platform.OS === 'ios' ? 96 : 0}
       >
         {/* Header — status, timer, actions */}
