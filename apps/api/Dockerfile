@@ -20,10 +20,13 @@ RUN npx turbo run build --filter=@noni/api
 FROM node:20-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
+RUN apk add --no-cache openssl
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/apps/api/dist ./apps/api/dist
 COPY --from=build /app/apps/api/prisma ./apps/api/prisma
 COPY --from=build /app/apps/api/package.json ./apps/api/package.json
 WORKDIR /app/apps/api
 EXPOSE 3000
-CMD ["node", "dist/index.js"]
+# Apply pending migrations, then boot. Baked into the image so hosts don't need
+# a start-command override (Render's dockerCommand parsing mangles quoting).
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/index.js"]

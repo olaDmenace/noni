@@ -17,7 +17,8 @@ services:
     region: frankfurt # closest Render region to Nigeria
     dockerfilePath: ./apps/api/Dockerfile
     dockerContext: .
-    dockerCommand: sh -c "npx prisma migrate deploy && node dist/index.js"
+    # Start command (incl. prisma migrate deploy) is baked into the image CMD —
+    # do not add a dockerCommand override here; Render's parser mangles quotes.
     healthCheckPath: /readyz
     autoDeploy: true
     envVars:
