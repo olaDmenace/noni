@@ -1,0 +1,78 @@
+# Render Blueprint — provisions the Noni API + managed Postgres + Key Value (Redis).
+# Dashboard → New + → Blueprint → select this repo → Apply.
+#
+# Notes:
+# - NODE_ENV stays "development" until real Flutterwave keys exist, so the
+#   simulated checkout (POST /v1/payments/dev/complete) keeps working for testing.
+#   Flip it to "production" in the dashboard when FLW_SECRET_KEY is set.
+# - Migrations run automatically on every deploy (prisma migrate deploy at boot).
+# - Free-tier caveats: the web service sleeps after ~15 min idle (first request
+#   then takes ~50s), and Render's free Postgres expires after ~30 days — upgrade
+#   it or move DATABASE_URL to a free Supabase project before then.
+services:
+  - type: web
+    name: noni-api
+    runtime: docker
+    plan: free
+    region: frankfurt # closest Render region to Nigeria
+    dockerfilePath: ./apps/api/Dockerfile
+    dockerContext: .
+    dockerCommand: sh -c "npx prisma migrate deploy && node dist/index.js"
+    healthCheckPath: /readyz
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: development
+      - key: LOG_LEVEL
+        value: info
+      - key: DATABASE_URL
+        fromDatabase:
+          name: noni-db
+          property: connectionString
+      - key: DIRECT_URL
+        fromDatabase:
+          name: noni-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: noni-redis
+          property: connectionString
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: OTP_SALT
+        generateValue: true
+      - key: PHONE_HASH_SALT
+        generateValue: true
+      # 64 hex chars — Render prompts for this on Apply (generate one with:
+      # PowerShell: -join ((1..32) | ForEach-Object { '{0:x2}' -f (Get-Random -Max 256) })
+      - key: NOTE_ENCRYPTION_KEY
+        sync: false
+      # Placeholder keeps the canned dev-AI replies active; replace with a real
+      # Anthropic key in the dashboard to enable live AI chat.
+      - key: ANTHROPIC_API_KEY
+        value: sk-ant-replace-me
+      - key: SMS_PROVIDER
+        value: auto
+      # Paste your SMS Gate credentials on Apply so OTP SMS flow from the cloud
+      # through the Android gateway phone.
+      - key: SMSGATE_USERNAME
+        sync: false
+      - key: SMSGATE_PASSWORD
+        sync: false
+
+  - type: keyvalue
+    name: noni-redis
+    plan: free
+    region: frankfurt
+    ipAllowList: [] # internal-only access
+    maxmemoryPolicy: noeviction # queue state must never be evicted
+
+databases:
+  - name: noni-db
+    plan: free
+    region: frankfurt
+    databaseName: noni
+    user: noni
