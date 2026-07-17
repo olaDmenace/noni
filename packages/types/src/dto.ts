@@ -288,4 +288,19 @@ export interface WsTurnCredentialsEvent {
   ttlSecs: number;
 }
 
+// S-005 — report an agent, optionally attaching consented evidence.
+// Evidence is the ONLY sanctioned path for session content to reach the server:
+// the reporter explicitly opts in, it is encrypted at rest, and it is purged
+// when the report is resolved.
+export type ReportReason = 'MISCONDUCT' | 'INAPPROPRIATE' | 'UNSAFE' | 'OTHER';
+export interface ReportEvidenceMessage {
+  sender: 'USER' | 'AGENT';
+  text: string;
+}
+export interface ReportAgentBody {
+  reason: ReportReason;
+  details?: string;
+  evidence?: ReportEvidenceMessage[];
+}
+
 export type SessionStatusType = SessionStatus; // re-export for convenience

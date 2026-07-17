@@ -26,21 +26,37 @@ export interface BlockReportSheetProps {
   visible: boolean;
   onClose: () => void;
   onBlock: () => void | Promise<void>;
-  onReport: (reason: ReportReason, details?: string) => void | Promise<void>;
+  onReport: (
+    reason: ReportReason,
+    details: string | undefined,
+    includeEvidence: boolean,
+  ) => void | Promise<void>;
+  // Number of chat messages available to attach as consented evidence (S-005).
+  // 0 / undefined hides the opt-in entirely. Nothing leaves the device unless
+  // the reporter switches it on — it defaults to off.
+  evidenceMessageCount?: number;
 }
 
 type View_ = 'root' | 'report';
 
-export function BlockReportSheet({ visible, onClose, onBlock, onReport }: BlockReportSheetProps) {
+export function BlockReportSheet({
+  visible,
+  onClose,
+  onBlock,
+  onReport,
+  evidenceMessageCount = 0,
+}: BlockReportSheetProps) {
   const [view, setView] = useState<View_>('root');
   const [reason, setReason] = useState<ReportReason | null>(null);
   const [details, setDetails] = useState('');
+  const [includeEvidence, setIncludeEvidence] = useState(false);
   const [busy, setBusy] = useState(false);
 
   function reset() {
     setView('root');
     setReason(null);
     setDetails('');
+    setIncludeEvidence(false);
     setBusy(false);
   }
 
@@ -63,7 +79,7 @@ export function BlockReportSheet({ visible, onClose, onBlock, onReport }: BlockR
     if (!reason) return;
     setBusy(true);
     try {
-      await onReport(reason, details.trim() || undefined);
+      await onReport(reason, details.trim() || undefined, includeEvidence);
       handleClose();
     } finally {
       setBusy(false);
@@ -140,6 +156,27 @@ export function BlockReportSheet({ visible, onClose, onBlock, onReport }: BlockR
                 multiline
                 style={styles.textarea}
               />
+
+              {evidenceMessageCount > 0 && (
+                <Pressable
+                  onPress={() => setIncludeEvidence((v) => !v)}
+                  style={[styles.reasonCard, includeEvidence && styles.reasonCardSelected]}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+                    <View style={[styles.checkbox, includeEvidence && styles.checkboxOn]}>
+                      {includeEvidence && <Text style={styles.checkboxTick}>✓</Text>}
+                    </View>
+                    <Text style={[styles.reasonLabel, { flex: 1 }]}>
+                      Include this chat as evidence
+                    </Text>
+                  </View>
+                  <Text style={styles.reasonHint}>
+                    Shares the last {Math.min(evidenceMessageCount, 50)} messages with the
+                    reviewer, encrypted. Deleted when the review closes. Nothing is shared
+                    unless you turn this on — we never keep chats otherwise.
+                  </Text>
+                </Pressable>
+              )}
 
               <Pressable
                 onPress={handleSubmitReport}
@@ -261,6 +298,25 @@ const styles = StyleSheet.create({
   reasonHint: {
     ...typography.caption,
     color: colors.textMuted,
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 5,
+    borderWidth: 1.5,
+    borderColor: colors.borderStrong,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxOn: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  checkboxTick: {
+    color: colors.primaryInk,
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 15,
   },
   textarea: {
     ...typography.body,

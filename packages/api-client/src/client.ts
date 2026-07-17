@@ -29,6 +29,7 @@ import type {
   RateSessionBody,
   RedeemCodeResponse,
   RegisterPushTokenBody,
+  ReportAgentBody,
   RequestOtpBody,
   Session,
   SubscriptionState,
@@ -118,10 +119,7 @@ export class NoniApiClient {
   blockAgent(id: string) {
     return this.post<void>(`/v1/sessions/${id}/block`, {});
   }
-  reportAgent(
-    id: string,
-    body: { reason: 'MISCONDUCT' | 'INAPPROPRIATE' | 'UNSAFE' | 'OTHER'; details?: string },
-  ) {
+  reportAgent(id: string, body: ReportAgentBody) {
     return this.post<{ reportId: string }>(`/v1/sessions/${id}/report`, body);
   }
 

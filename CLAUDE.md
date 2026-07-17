@@ -46,6 +46,13 @@ npm run -w @noni/mobile-user dev          # expo start (also: android / ios / we
 npm run -w @noni/mobile-agent dev
 ```
 
+Shipping app changes (`npm run ota` from the root): publishes an EAS Update to the
+`preview` channel for both apps — installed builds pick it up on next launch, no
+rebuild, no build credits. Works for any JS/TS change (screens, logic, copy, shared
+packages). Only native changes (new native modules, permissions, app.json plugins,
+icons/splash) need a real `eas build`. Commit first — the update message is taken
+from the latest git commit (`--auto`).
+
 Prisma (all scoped to `@noni/api`):
 
 ```bash
@@ -81,7 +88,7 @@ Shared packages ship raw TypeScript (`main` points at `src/index.ts`) — no bui
 
 ## Safety / crisis protocol
 
-`src/services/safety.service.ts` implements PRD S-001–S-007. **Every text message — user, agent, or AI — must pass through it before being forwarded.** Crisis keywords and the response script live in `@noni/ai-prompt`. A trigger writes a `CrisisIncident` audit row (never message content), flags the session, and broadcasts via Redis pub/sub to the socket room. Session message content is NEVER persisted to the database — this is a hard privacy rule stated at the top of `schema.prisma`.
+`src/services/safety.service.ts` implements PRD S-001–S-007. **Every text message — user, agent, or AI — must pass through it before being forwarded.** Crisis keywords and the response script live in `@noni/ai-prompt`. A trigger writes a `CrisisIncident` audit row (never message content), flags the session, and broadcasts via Redis pub/sub to the socket room. Session message content is NEVER persisted to the database — this is a hard privacy rule stated at the top of `schema.prisma`, with exactly one audited exception: `AgentReport.evidenceEncrypted` (S-005) holds a chat excerpt the REPORTER explicitly opted to attach when reporting misconduct — AES-256-GCM encrypted, never logged, admin-readable only via `GET /v1/admin/reports/:id/evidence`, and purged when the report is resolved. Do not add other persistence paths for message content.
 
 ## Design System
 Always read DESIGN.md before making any visual or UI decision. All color tokens, typography choices, spacing, and aesthetic direction are defined there. `packages/ui/src/theme.ts` is the code mirror — both must stay in sync. Do not deviate without explicit user approval. Core non-negotiables:

@@ -6,6 +6,7 @@ import { prisma } from '../models/prisma.js';
 import { applicationService } from '../services/application.service.js';
 import { orgService } from '../services/org.service.js';
 import { safetyService } from '../services/safety.service.js';
+import { sessionService } from '../services/session.service.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { NotFound } from '../utils/errors.js';
 
@@ -31,7 +32,22 @@ adminRouter.get(
       take: 100,
       include: { agent: { select: { alias: true, isSuspended: true, ratingAvg: true } } },
     });
-    res.json({ reports });
+    // Ciphertext never leaves the API — reviewers fetch decrypted evidence explicitly.
+    res.json({
+      reports: reports.map(({ evidenceEncrypted: _evidence, ...r }) => ({
+        ...r,
+        hasEvidence: Boolean(_evidence),
+      })),
+    });
+  }),
+);
+
+// S-005: reporter-consented chat excerpt for a report under review.
+adminRouter.get(
+  '/reports/:id/evidence',
+  asyncHandler(async (req, res) => {
+    const messages = await sessionService.getReportEvidence(req.params.id);
+    res.json({ messages });
   }),
 );
 
@@ -54,6 +70,8 @@ adminRouter.post(
           reviewedAt: new Date(),
           reviewedBy: req.user!.sub,
           outcome,
+          // Zero-retention promise: consented evidence lives only as long as the review.
+          evidenceEncrypted: null,
           ...(notes ? { details: `${report.details ?? ''}\n[admin] ${notes}`.trim() } : {}),
         },
       }),

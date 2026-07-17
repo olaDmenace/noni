@@ -292,9 +292,14 @@ export function HumanSessionScreen({ route, navigation }: Props) {
     }
   }
 
-  async function onReport(reason: ReportReason, details?: string) {
+  async function onReport(reason: ReportReason, details: string | undefined, includeEvidence: boolean) {
     try {
-      await api.reportAgent(sessionId, { reason, details });
+      // S-005 consented evidence: chat lives only on this device — it reaches the
+      // server only when the reporter opts in, and only the last 50 messages.
+      const evidence = includeEvidence
+        ? messages.slice(-50).map((m) => ({ sender: m.sender, text: m.text }))
+        : undefined;
+      await api.reportAgent(sessionId, { reason, details, evidence });
       toast.success('A human reviewer reads every report, within 24 hours.', 'Report sent');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Try again', 'Could not send report');
@@ -334,6 +339,7 @@ export function HumanSessionScreen({ route, navigation }: Props) {
         onClose={() => setSheetVisible(false)}
         onBlock={onBlock}
         onReport={onReport}
+        evidenceMessageCount={messages.length}
       />
 
       {/* Header — alias + elapsed timer + end + overflow. */}

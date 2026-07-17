@@ -5,7 +5,7 @@ export const Tier = {
   T2: 'T2', // Text priority ₦150
   T3: 'T3', // Voice 30-min ₦300
   T4: 'T4', // Voice 60-min ₦500
-  T5: 'T5', // Premium counselor ₦800
+  T5: 'T5', // Premium listener ₦800
   T6: 'T6', // Monthly Lite ₦500/mo
   T7: 'T7', // Monthly Standard ₦2,000/mo
 } as const;

@@ -1,5 +1,8 @@
 // Noni — Prisma schema. See arch §5.1.
 // All money fields are kobo (Int). NEVER store session message content here.
+// SINGLE AUDITED EXCEPTION: AgentReport.evidenceEncrypted — messages the REPORTER
+// explicitly consented to attach when reporting misconduct (S-005). Encrypted
+// (AES-256-GCM), never logged, and purged when the report is resolved.
 
 generator client {
   provider = "prisma-client-js"
@@ -269,6 +272,10 @@ model AgentReport {
   session    Session?  @relation(fields: [sessionId], references: [id], onDelete: SetNull)
   reason     String    // MISCONDUCT | INAPPROPRIATE | UNSAFE | OTHER
   details    String?
+  // Reporter-consented chat excerpt (see schema header). Encrypted JSON array of
+  // { sender, text }. Set only when the reporter opts in; nulled on resolve.
+  evidenceEncrypted    String?
+  evidenceMessageCount Int?
   reviewedAt DateTime?
   reviewedBy String?
   outcome    String?   // NO_ACTION | WARNED | SUSPENDED | BANNED

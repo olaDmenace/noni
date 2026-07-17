@@ -145,10 +145,20 @@ sessionRouter.post(
   requireAuth,
   requireRole('USER'),
   asyncHandler(async (req, res) => {
-    const { reason, details } = z
+    const { reason, details, evidence } = z
       .object({
         reason: z.enum(['MISCONDUCT', 'INAPPROPRIATE', 'UNSAFE', 'OTHER']),
         details: z.string().max(1000).optional(),
+        // Consented chat excerpt (S-005) — capped so a report can't become a dump.
+        evidence: z
+          .array(
+            z.object({
+              sender: z.enum(['USER', 'AGENT']),
+              text: z.string().max(2000),
+            }),
+          )
+          .max(50)
+          .optional(),
       })
       .parse(req.body);
     const result = await sessionService.reportAgent({
@@ -156,6 +166,7 @@ sessionRouter.post(
       sessionId: req.params.id,
       reason,
       details,
+      evidence,
     });
     res.status(201).json(result);
   }),

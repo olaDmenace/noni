@@ -10,7 +10,8 @@
     "build": "echo \"Use: eas build --platform all\" && exit 0",
     "lint": "eslint src --ext .ts,.tsx",
     "test": "echo \"no tests yet\" && exit 0",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "ota": "eas update --branch preview --auto"
   },
   "dependencies": {
     "@config-plugins/react-native-webrtc": "^13.0.0",

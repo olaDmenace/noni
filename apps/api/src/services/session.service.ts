@@ -389,6 +389,9 @@ export const sessionService = {
     sessionId: string;
     reason: ReportReason;
     details?: string;
+    // Reporter-consented chat excerpt — the single sanctioned exception to the
+    // zero-retention rule (schema header). Encrypted at rest, purged on resolve.
+    evidence?: Array<{ sender: 'USER' | 'AGENT'; text: string }>;
   }) {
     const session = await prisma.session.findUnique({ where: { id: args.sessionId } });
     if (!session) throw NotFound('SESSION_NOT_FOUND', 'Session not found');
@@ -402,6 +405,12 @@ export const sessionService = {
         sessionId: args.sessionId,
         reason: args.reason,
         details: args.details,
+        ...(args.evidence?.length
+          ? {
+              evidenceEncrypted: encryptNote(JSON.stringify(args.evidence)),
+              evidenceMessageCount: args.evidence.length,
+            }
+          : {}),
       },
     });
 
@@ -417,6 +426,20 @@ export const sessionService = {
       data: { reportId: report.id, type: 'AGENT_REPORT' },
     });
     return { reportId: report.id };
+  },
+
+  // S-005: decrypt consented report evidence for admin review. Returns null when
+  // the reporter attached none (or it was already purged on resolution).
+  async getReportEvidence(
+    reportId: string,
+  ): Promise<Array<{ sender: 'USER' | 'AGENT'; text: string }> | null> {
+    const report = await prisma.agentReport.findUnique({ where: { id: reportId } });
+    if (!report) throw NotFound('REPORT_NOT_FOUND', 'Report not found');
+    if (!report.evidenceEncrypted) return null;
+    return JSON.parse(decryptNote(report.evidenceEncrypted)) as Array<{
+      sender: 'USER' | 'AGENT';
+      text: string;
+    }>;
   },
 
   // F-017: private, encrypted agent notes. Only the session's agent can read/write.
