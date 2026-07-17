@@ -5,20 +5,26 @@ interface AppConfig {
   wsBaseUrl: string;
 }
 
-type ExpoEnv = { EXPO_PUBLIC_API_BASE_URL?: string; EXPO_PUBLIC_WS_BASE_URL?: string };
-const env = ((globalThis as { process?: { env?: ExpoEnv } }).process?.env ?? {}) as ExpoEnv;
 const extra = (Constants.expoConfig?.extra ?? {}) as Partial<AppConfig>;
 
-// In dev the phone reaches Metro via the PC's current LAN IP (hostUri), but the
-// API URL in .env goes stale every time DHCP reassigns the IP. Swap the host of
-// the configured URL for the Metro host so the API always follows the PC.
+// In dev (Expo Go / dev client) the phone reaches Metro via the PC's current LAN
+// IP (hostUri). Local http:// URLs go stale when DHCP reassigns that IP, so swap
+// their host for the Metro host. Cloud https:// URLs are never rewritten.
 function withDevHost(url: string): string {
+  if (url.startsWith('https://') || url.startsWith('wss://')) return url;
   const host = Constants.expoConfig?.hostUri?.split(':')[0];
   if (!host || !/^\d+\.\d+\.\d+\.\d+$/.test(host)) return url;
   return url.replace(/\/\/[^:/]+/, `//${host}`);
 }
 
+// process.env.EXPO_PUBLIC_* MUST be accessed literally: Expo inlines the value at
+// bundle time, and any indirect access (destructuring, aliasing) resolves to
+// undefined in release builds — which is how localhost once shipped to production.
 export const config: AppConfig = {
-  apiBaseUrl: withDevHost(env.EXPO_PUBLIC_API_BASE_URL ?? extra.apiBaseUrl ?? 'http://localhost:3000'),
-  wsBaseUrl: withDevHost(env.EXPO_PUBLIC_WS_BASE_URL ?? extra.wsBaseUrl ?? 'ws://localhost:3000'),
+  apiBaseUrl: withDevHost(
+    process.env.EXPO_PUBLIC_API_BASE_URL ?? extra.apiBaseUrl ?? 'https://noni-api.onrender.com',
+  ),
+  wsBaseUrl: withDevHost(
+    process.env.EXPO_PUBLIC_WS_BASE_URL ?? extra.wsBaseUrl ?? 'wss://noni-api.onrender.com',
+  ),
 };

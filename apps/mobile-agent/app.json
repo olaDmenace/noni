@@ -29,8 +29,8 @@
       ]
     },
     "extra": {
-      "apiBaseUrl": "http://localhost:3000",
-      "wsBaseUrl": "ws://localhost:3000",
+      "apiBaseUrl": "https://noni-api.onrender.com",
+      "wsBaseUrl": "wss://noni-api.onrender.com",
       "eas": {
         "projectId": "3a7af4c4-0a6b-47e2-acd2-c9aa8c900ff9"
       }
