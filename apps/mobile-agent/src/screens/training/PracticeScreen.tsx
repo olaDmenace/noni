@@ -21,6 +21,7 @@ import { Feather } from '@expo/vector-icons';
 import {
   Card,
   FadeInView,
+  RichText,
   Screen,
   TypingDots,
   colors,
@@ -149,7 +150,11 @@ export function PracticeScreen(_props: Props) {
             const mine = item.from === 'AGENT';
             return (
               <View style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleTheirs]}>
-                <Text style={{ ...typography.body, color: colors.text }}>{item.text}</Text>
+                {mine ? (
+                  <Text style={{ ...typography.body, color: colors.text }}>{item.text}</Text>
+                ) : (
+                  <RichText text={item.text} style={{ ...typography.body, color: colors.text }} />
+                )}
               </View>
             );
           }}

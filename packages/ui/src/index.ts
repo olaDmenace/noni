@@ -8,6 +8,7 @@ export * from './components/CrisisScript';
 export * from './components/Disclaimer';
 export * from './components/FadeInView';
 export * from './components/Input';
+export * from './components/RichText';
 export * from './components/Screen';
 export * from './components/Splash';
 export * from './components/Toast';

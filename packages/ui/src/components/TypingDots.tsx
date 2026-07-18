@@ -9,12 +9,14 @@ const DOT_COUNT = 3;
 const DOT_STAGGER_MS = 180;
 
 export interface TypingDotsProps {
-  /** Optional quiet label rendered before the dots, e.g. "Noni is typing". */
+  /** Optional quiet label, e.g. "Noni is typing". */
   label?: string;
   color?: string;
+  /** Render the dots before the label ("…listening") instead of after. */
+  dotsFirst?: boolean;
 }
 
-export function TypingDots({ label, color = colors.textMuted }: TypingDotsProps) {
+export function TypingDots({ label, color = colors.textMuted, dotsFirst = false }: TypingDotsProps) {
   const dots = useRef(
     Array.from({ length: DOT_COUNT }, () => new Animated.Value(0.25)),
   ).current;
@@ -44,23 +46,27 @@ export function TypingDots({ label, color = colors.textMuted }: TypingDotsProps)
     return () => loops.forEach((l) => l.stop());
   }, [dots]);
 
+  const labelNode = label ? <Text style={{ ...typography.caption, color }}>{label}</Text> : null;
+  const dotsNode = (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+      {dots.map((v, i) => (
+        <Animated.View
+          key={i}
+          style={{
+            width: 6,
+            height: 6,
+            borderRadius: 3,
+            backgroundColor: color,
+            opacity: v,
+          }}
+        />
+      ))}
+    </View>
+  );
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-      {label ? <Text style={{ ...typography.caption, color }}>{label}</Text> : null}
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-        {dots.map((v, i) => (
-          <Animated.View
-            key={i}
-            style={{
-              width: 6,
-              height: 6,
-              borderRadius: 3,
-              backgroundColor: color,
-              opacity: v,
-            }}
-          />
-        ))}
-      </View>
+      {dotsFirst ? dotsNode : labelNode}
+      {dotsFirst ? labelNode : dotsNode}
     </View>
   );
 }

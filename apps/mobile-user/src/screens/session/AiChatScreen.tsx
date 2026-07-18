@@ -17,6 +17,7 @@ import {
   CrisisAlert,
   Disclaimer,
   FadeInView,
+  RichText,
   Screen,
   TypingDots,
   colors,
@@ -77,9 +78,31 @@ export function AiChatScreen({ route, navigation }: Props) {
   const [messages, setMessages] = useState<Message[]>([WELCOME]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
+  const [userTyping, setUserTyping] = useState(false);
   const listRef = useRef<FlatList<Message>>(null);
   const historyLoaded = useRef(false);
   const keyboardInset = useKeyboardInset();
+  const typingIdleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Presence line under "Noni": Available → "…listening" while the user types
+  // → "…typing" while the reply is being composed.
+  function onInputChange(text: string) {
+    setInput(text);
+    setUserTyping(true);
+    if (typingIdleTimer.current) clearTimeout(typingIdleTimer.current);
+    typingIdleTimer.current = setTimeout(() => setUserTyping(false), 1600);
+  }
+  useEffect(
+    () => () => {
+      if (typingIdleTimer.current) clearTimeout(typingIdleTimer.current);
+    },
+    [],
+  );
+  const presence: 'typing' | 'listening' | 'available' = busy
+    ? 'typing'
+    : userTyping
+      ? 'listening'
+      : 'available';
 
   // Restore the on-device history once, then persist every change after that.
   useEffect(() => {
@@ -186,7 +209,7 @@ export function AiChatScreen({ route, navigation }: Props) {
         <Avatar label="N" size={40} showPresence presenceColor={colors.success} />
         <View style={{ flex: 1 }}>
           <Text style={{ ...typography.bodyStrong, color: colors.text }}>Noni</Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2, minHeight: 18 }}>
             <View
               style={{
                 width: 6,
@@ -195,7 +218,19 @@ export function AiChatScreen({ route, navigation }: Props) {
                 backgroundColor: colors.success,
               }}
             />
-            <Text style={{ ...typography.caption, color: colors.success }}>listening</Text>
+            {presence === 'available' ? (
+              <FadeInView key="available" rise={0}>
+                <Text style={{ ...typography.caption, color: colors.success }}>Available</Text>
+              </FadeInView>
+            ) : (
+              <FadeInView key={presence} rise={0}>
+                <TypingDots
+                  dotsFirst
+                  label={presence === 'typing' ? 'typing' : 'listening'}
+                  color={colors.success}
+                />
+              </FadeInView>
+            )}
           </View>
         </View>
         <Pressable onPress={clearHistory} hitSlop={12} style={{ padding: spacing.xs }}>
@@ -280,14 +315,12 @@ export function AiChatScreen({ route, navigation }: Props) {
                   maxWidth: '85%',
                 }}
               >
-                <Text
-                  style={{
-                    ...typography.body,
-                    color: isMe ? colors.primaryInk : colors.text,
-                  }}
-                >
-                  {item.text}
-                </Text>
+                {isMe ? (
+                  <Text style={{ ...typography.body, color: colors.primaryInk }}>{item.text}</Text>
+                ) : (
+                  // AI replies can contain markdown (**bold**, lists) — render it.
+                  <RichText text={item.text} style={{ ...typography.body, color: colors.text }} />
+                )}
               </FadeInView>
             );
           }}
@@ -304,7 +337,7 @@ export function AiChatScreen({ route, navigation }: Props) {
         >
           <TextInput
             value={input}
-            onChangeText={setInput}
+            onChangeText={onInputChange}
             placeholder="Type how you feel…"
             placeholderTextColor={colors.textDim}
             multiline

@@ -8,6 +8,7 @@
     "userInterfaceStyle": "dark",
     "newArchEnabled": false,
     "backgroundColor": "#0E0B0A",
+    "icon": "./assets/icon.png",
     "splash": {
       "image": "./assets/splash.png",
       "backgroundColor": "#0E0B0A",
@@ -23,6 +24,10 @@
     },
     "android": {
       "package": "ng.noni.user",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0E0B0A"
+      },
       "permissions": [
         "RECORD_AUDIO",
         "MODIFY_AUDIO_SETTINGS"
