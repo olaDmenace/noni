@@ -41,7 +41,7 @@ const Tabs = createBottomTabNavigator<AppTabParamList>();
 
 function AuthNavigator() {
   return (
-    <AuthStack.Navigator screenOptions={{ headerShown: false }}>
+    <AuthStack.Navigator screenOptions={{ headerShown: false, animation: 'fade', animationDuration: 250 }}>
       <AuthStack.Screen name="Login" component={LoginScreen} />
       <AuthStack.Screen name="Otp" component={OtpScreen} />
     </AuthStack.Navigator>
@@ -103,7 +103,7 @@ function AppTabs() {
 function AppNavigator() {
   return (
     <>
-      <AppStack.Navigator screenOptions={{ headerShown: false }}>
+      <AppStack.Navigator screenOptions={{ headerShown: false, animation: 'slide_from_right', animationDuration: 250 }}>
         <AppStack.Screen name="Tabs" component={AppTabs} />
         <AppStack.Screen
           name="Session"

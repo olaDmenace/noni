@@ -18,7 +18,18 @@ import {
   View,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { Card, Screen, colors, radius, spacing, typography, useToast } from '@noni/ui';
+import {
+  Card,
+  FadeInView,
+  Screen,
+  TypingDots,
+  colors,
+  radius,
+  spacing,
+  typography,
+  useKeyboardInset,
+  useToast,
+} from '@noni/ui';
 import { api } from '../../api/client';
 import type { AppStackParamList } from '../../navigation/RootNavigator';
 
@@ -36,6 +47,7 @@ export function PracticeScreen(_props: Props) {
   const [input, setInput] = useState('');
   const listRef = useRef<FlatList<PracticeMessage>>(null);
   const msgSeq = useRef(0);
+  const keyboardInset = useKeyboardInset();
 
   function append(from: PracticeMessage['from'], text: string) {
     msgSeq.current += 1;
@@ -107,10 +119,10 @@ export function PracticeScreen(_props: Props) {
   return (
     <Screen>
       <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        // SDK 54 is edge-to-edge on Android: the window no longer auto-resizes for
-        // the keyboard, so Android needs explicit padding behavior too.
-        behavior="padding"
+        // iOS: KeyboardAvoidingView works. Android: unreliable under edge-to-edge,
+        // so useKeyboardInset() measures the keyboard and we pad explicitly.
+        style={{ flex: 1, paddingBottom: keyboardInset }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 96 : 0}
       >
         <FlatList
@@ -144,9 +156,9 @@ export function PracticeScreen(_props: Props) {
         />
 
         {send.isPending ? (
-          <Text style={{ ...typography.caption, color: colors.textDim, marginBottom: spacing.xs }}>
-            Chidi is typing…
-          </Text>
+          <FadeInView style={{ marginBottom: spacing.xs }}>
+            <TypingDots label="Chidi is typing" color={colors.textDim} />
+          </FadeInView>
         ) : null}
 
         <View style={styles.composer}>

@@ -55,7 +55,7 @@ const Tabs = createBottomTabNavigator<AppTabParamList>();
 
 function AuthNavigator() {
   return (
-    <AuthStack.Navigator screenOptions={{ headerShown: false }}>
+    <AuthStack.Navigator screenOptions={{ headerShown: false, animation: 'fade', animationDuration: 250 }}>
       <AuthStack.Screen name="Welcome" component={WelcomeScreen} />
       <AuthStack.Screen name="HowItWorks" component={HowItWorksScreen} />
       <AuthStack.Screen name="Otp" component={OtpScreen} />
@@ -124,7 +124,7 @@ function AppTabs() {
 
 function AppNavigator() {
   return (
-    <AppStack.Navigator screenOptions={{ headerShown: false }}>
+    <AppStack.Navigator screenOptions={{ headerShown: false, animation: 'slide_from_right', animationDuration: 250 }}>
       <AppStack.Screen name="Tabs" component={AppTabs} />
       <AppStack.Screen name="AiChat" component={AiChatScreen} />
       <AppStack.Screen name="Queue" component={QueueScreen} options={{ headerShown: true, title: 'Finding a listener' }} />

@@ -27,11 +27,14 @@ import {
   BlockReportSheet,
   CrisisAlert,
   Disclaimer,
+  FadeInView,
   Screen,
+  TypingDots,
   colors,
   radius,
   spacing,
   typography,
+  useKeyboardInset,
   useToast,
   type ReportReason,
 } from '@noni/ui';
@@ -65,6 +68,7 @@ export function HumanSessionScreen({ route, navigation }: Props) {
 
   const [disclaimerVisible, setDisclaimerVisible] = useState(true);
   const [sheetVisible, setSheetVisible] = useState(false);
+  const keyboardInset = useKeyboardInset();
   const [crisis, setCrisis] = useState<WsCrisisAlertEvent | null>(null);
   const [crisisModalVisible, setCrisisModalVisible] = useState(false);
 
@@ -404,10 +408,10 @@ export function HumanSessionScreen({ route, navigation }: Props) {
       ) : null}
 
       <KeyboardAvoidingView
-        // SDK 54 is edge-to-edge on Android: the window no longer auto-resizes for
-        // the keyboard, so Android needs explicit padding behavior too.
-        behavior="padding"
-        style={{ flex: 1 }}
+        // iOS: KeyboardAvoidingView works. Android: unreliable under edge-to-edge,
+        // so useKeyboardInset() measures the keyboard and we pad explicitly.
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={{ flex: 1, paddingBottom: keyboardInset }}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 0}
       >
         <FlatList
@@ -481,9 +485,9 @@ export function HumanSessionScreen({ route, navigation }: Props) {
         ) : null}
 
         {agentTyping ? (
-          <Text style={{ ...typography.caption, color: colors.textMuted, paddingBottom: spacing.xs }}>
-            {agentAlias} is typing…
-          </Text>
+          <FadeInView style={{ paddingBottom: spacing.xs }}>
+            <TypingDots label={`${agentAlias} is typing`} />
+          </FadeInView>
         ) : null}
 
         {/* Crisis strip — held, not alarmed. Stays pinned above the composer. */}

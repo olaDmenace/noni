@@ -12,7 +12,19 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { Avatar, CrisisAlert, Disclaimer, Screen, colors, radius, spacing, typography } from '@noni/ui';
+import {
+  Avatar,
+  CrisisAlert,
+  Disclaimer,
+  FadeInView,
+  Screen,
+  TypingDots,
+  colors,
+  radius,
+  spacing,
+  typography,
+  useKeyboardInset,
+} from '@noni/ui';
 import { api } from '../../api/client';
 import type { AppStackParamList } from '../../navigation/RootNavigator';
 
@@ -67,6 +79,7 @@ export function AiChatScreen({ route, navigation }: Props) {
   const [busy, setBusy] = useState(false);
   const listRef = useRef<FlatList<Message>>(null);
   const historyLoaded = useRef(false);
+  const keyboardInset = useKeyboardInset();
 
   // Restore the on-device history once, then persist every change after that.
   useEffect(() => {
@@ -96,6 +109,11 @@ export function AiChatScreen({ route, navigation }: Props) {
   function scrollToEnd() {
     setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 30);
   }
+
+  // Keep the latest message visible when the keyboard claims its space.
+  useEffect(() => {
+    if (keyboardInset > 0) scrollToEnd();
+  }, [keyboardInset]);
 
   async function send() {
     const text = input.trim();
@@ -186,10 +204,11 @@ export function AiChatScreen({ route, navigation }: Props) {
       </View>
 
       <KeyboardAvoidingView
-        // SDK 54 is edge-to-edge on Android: the window no longer auto-resizes for
-        // the keyboard, so Android needs explicit padding behavior too.
-        behavior="padding"
-        style={{ flex: 1 }}
+        // iOS: KeyboardAvoidingView works. Android: it has proven unreliable
+        // under SDK 54's edge-to-edge, so useKeyboardInset() measures the
+        // keyboard and we pad for it explicitly (paddingBottom below).
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={{ flex: 1, paddingBottom: keyboardInset }}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 0}
       >
         <FlatList
@@ -199,10 +218,29 @@ export function AiChatScreen({ route, navigation }: Props) {
           keyExtractor={(m) => m.id}
           contentContainerStyle={{ paddingVertical: spacing.md, gap: spacing.sm }}
           onContentSizeChange={scrollToEnd}
+          ListFooterComponent={
+            busy ? (
+              <FadeInView
+                style={{
+                  alignSelf: 'flex-start',
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
+                  borderWidth: 1,
+                  paddingHorizontal: spacing.md,
+                  paddingVertical: spacing.md,
+                  borderRadius: radius.md,
+                  borderBottomLeftRadius: 6,
+                  marginTop: spacing.sm,
+                }}
+              >
+                <TypingDots label="Noni is typing" />
+              </FadeInView>
+            ) : null
+          }
           renderItem={({ item }) => {
             if (item.sender === 'SYSTEM') {
               return (
-                <View
+                <FadeInView
                   style={{
                     alignSelf: 'center',
                     backgroundColor: colors.secondaryMuted,
@@ -223,12 +261,12 @@ export function AiChatScreen({ route, navigation }: Props) {
                   >
                     {item.text}
                   </Text>
-                </View>
+                </FadeInView>
               );
             }
             const isMe = item.sender === 'USER';
             return (
-              <View
+              <FadeInView
                 style={{
                   alignSelf: isMe ? 'flex-end' : 'flex-start',
                   backgroundColor: isMe ? colors.primary : colors.surface,
@@ -250,7 +288,7 @@ export function AiChatScreen({ route, navigation }: Props) {
                 >
                   {item.text}
                 </Text>
-              </View>
+              </FadeInView>
             );
           }}
         />

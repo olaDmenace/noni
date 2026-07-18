@@ -132,6 +132,12 @@ export const motion = {
     exit: 'cubic-bezier(0.4, 0, 1, 1)',
     move: 'cubic-bezier(0.4, 0, 0.2, 1)',
   },
+  // Same curves as control-point tuples for RN Animated: Easing.bezier(...tuple).
+  bezier: {
+    enter: [0.2, 0, 0, 1],
+    exit: [0.4, 0, 1, 1],
+    move: [0.4, 0, 0.2, 1],
+  },
 } as const;
 
 export const layout = {

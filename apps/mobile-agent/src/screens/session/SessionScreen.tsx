@@ -36,11 +36,14 @@ import {
   Button,
   CrisisAlert,
   CrisisScript,
+  FadeInView,
   Screen,
+  TypingDots,
   colors,
   radius,
   spacing,
   typography,
+  useKeyboardInset,
   useToast,
 } from '@noni/ui';
 import { api } from '../../api/client';
@@ -83,6 +86,7 @@ export function SessionScreen({ route, navigation }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [peerTyping, setPeerTyping] = useState(false);
+  const keyboardInset = useKeyboardInset();
   const [crisisAlert, setCrisisAlert] = useState<WsCrisisAlertEvent | null>(null);
   const [endedEvent, setEndedEvent] = useState<WsSessionEndEvent | null>(null);
 
@@ -451,10 +455,10 @@ export function SessionScreen({ route, navigation }: Props) {
       />
 
       <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        // SDK 54 is edge-to-edge on Android: the window no longer auto-resizes for
-        // the keyboard, so Android needs explicit padding behavior too.
-        behavior="padding"
+        // iOS: KeyboardAvoidingView works. Android: unreliable under edge-to-edge,
+        // so useKeyboardInset() measures the keyboard and we pad explicitly.
+        style={{ flex: 1, paddingBottom: keyboardInset }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 96 : 0}
       >
         {/* Header — status, timer, actions */}
@@ -605,9 +609,9 @@ export function SessionScreen({ route, navigation }: Props) {
         </View>
 
         {peerTyping ? (
-          <Text style={{ ...typography.caption, color: colors.textDim, marginBottom: spacing.xs }}>
-            They&apos;re typing…
-          </Text>
+          <FadeInView style={{ marginBottom: spacing.xs }}>
+            <TypingDots label="They're typing" color={colors.textDim} />
+          </FadeInView>
         ) : null}
 
         {/* Voice upgrade decision (F-014) */}
